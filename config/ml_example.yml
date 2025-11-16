@@ -1,0 +1,55 @@
+data:
+  source: csv
+  path: data/AIAUSDT_P_15m.csv
+
+features:
+  enabled: true
+  return_windows: [1, 3, 5, 10]
+  vol_windows: [10, 20]
+  ema_fast: 20
+  ema_slow: 50
+  trend_threshold: 0.001
+
+labels:
+  enabled: true
+  horizon: 5
+  pos_threshold: 0.003
+  fee_slippage: 0.001
+
+model:
+  enabled: true
+  train_ratio: 0.7
+  n_estimators: 200
+  learning_rate: 0.05
+  max_depth: 3
+  random_state: 42
+  feature_cols:
+    - ret_1
+    - ret_3
+    - ret_5
+    - ret_10
+    - vol_10
+    - vol_20
+    - trend_score
+
+strategy:
+  type: ml_long
+  params:
+    proba_entry: 0.55
+    proba_exit: 0.50
+    warmup_bars: 100
+
+risk:
+  risk_per_trade: 0.01
+  stop_loss_pct: 0.01
+  max_leverage: 1.0
+
+backtest:
+  initial_cash: 10000
+  fee_pct: 0.0004
+  slippage_pct: 0.0005
+
+report:
+  regime_columns: ["regime_trend", "regime_vol"]
+  equity_output: "out/ml_equity_curve.csv"
+  trades_output: "out/ml_trades.csv"

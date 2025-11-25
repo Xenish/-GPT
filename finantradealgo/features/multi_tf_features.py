@@ -12,7 +12,7 @@ from finantradealgo.features.ta_features import TAFeatureConfig, add_ta_features
 
 @dataclass
 class MultiTFConfig:
-    rule_1h: str = "1H"
+    rule_1h: str = "1h"
 
 
 def _resample_ohlcv_1h(df_15m: pd.DataFrame, rule: str) -> pd.DataFrame:

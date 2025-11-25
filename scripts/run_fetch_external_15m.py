@@ -8,7 +8,6 @@ if str(ROOT) not in sys.path:
 
 
 import time
-from pathlib import Path
 from typing import List
 
 import pandas as pd
@@ -92,10 +91,11 @@ def fetch_oi_15m(symbol: str, start_ms: int, end_ms: int) -> pd.DataFrame:
             "endTime": cur_end,
         }
 
-        resp = requests.get(url, params=params, timeout=10)
-
-        if resp.status_code != 200:
-            print(f"[ERROR] OI request failed: {resp.status_code}  body={resp.text}")
+        try:
+            resp = requests.get(url, params=params, timeout=10)
+            resp.raise_for_status()
+        except requests.RequestException as exc:
+            print(f"[WARN] OI request failed ({exc}); stopping OI collection.")
             break
 
         data = resp.json()

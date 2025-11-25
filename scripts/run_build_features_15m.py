@@ -7,7 +7,6 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 
-from finantradealgo.data_engine.loader import load_ohlcv_csv
 from finantradealgo.features.feature_pipeline_15m import (
     FeaturePipelineConfig,
     build_feature_pipeline_15m,
@@ -16,17 +15,21 @@ from finantradealgo.features.feature_pipeline_15m import (
 
 def main() -> None:
     symbol = "BTCUSDT"
-    csv_path = "data/ohlcv/BTCUSDT_15m.csv"
-
-    df_ohlcv = load_ohlcv_csv(csv_path)
-    print(f"[INFO] Raw OHLCV shape: {df_ohlcv.shape}")
+    ohlcv_path = Path("data/ohlcv") / f"{symbol}_15m.csv"
+    funding_path = Path("data/external/funding") / f"{symbol}_funding_15m.csv"
+    oi_path = Path("data/external/open_interest") / f"{symbol}_oi_15m.csv"
 
     cfg = FeaturePipelineConfig(
         rule_allowed_hours=list(range(8, 18)),
         rule_allowed_weekdays=[0, 1, 2, 3, 4],
     )
 
-    df_feat, _ = build_feature_pipeline_15m(df_ohlcv, symbol=symbol, cfg=cfg)
+    df_feat, feature_cols = build_feature_pipeline_15m(
+        csv_ohlcv_path=str(ohlcv_path),
+        pipeline_cfg=cfg,
+        csv_funding_path=str(funding_path) if funding_path.exists() else None,
+        csv_oi_path=str(oi_path) if oi_path.exists() else None,
+    )
 
     print(f"[INFO] Feature DF shape: {df_feat.shape}")
     print("[INFO] First 40 columns:")
@@ -34,7 +37,8 @@ def main() -> None:
     print("[INFO] Last 5 rows:")
     print(df_feat.tail())
 
-    out_path = "data/features/BTCUSDT_features_15m.csv"
+    out_path = Path("data/features") / f"{symbol}_features_15m.csv"
+    out_path.parent.mkdir(parents=True, exist_ok=True)
     df_feat.to_csv(out_path, index=False)
     print(f"[INFO] Saved features -> {out_path}")
 

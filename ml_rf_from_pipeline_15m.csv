@@ -1,0 +1,2 @@
+symbol,precision,recall,f1,accuracy,train_size,test_size,feature_count
+BTCUSDT,0.14960629921259844,0.10734463276836158,0.125,0.7231089521165857,6723,2882,92

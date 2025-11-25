@@ -8,7 +8,6 @@ if str(ROOT) not in sys.path:
 
 
 from finantradealgo.backtester.backtest_engine import BacktestConfig, Backtester
-from finantradealgo.data_engine.loader import load_ohlcv_csv
 from finantradealgo.features.feature_pipeline_15m import (
     FeaturePipelineConfig,
     build_feature_pipeline_15m,
@@ -20,16 +19,21 @@ from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrat
 
 def run_rule_backtest_15m() -> None:
     symbol = "BTCUSDT"
-
-    df_raw = load_ohlcv_csv("data/ohlcv/BTCUSDT_15m.csv")
-    print(f"[INFO] Raw OHLCV shape: {df_raw.shape}")
+    ohlcv_path = Path("data/ohlcv") / f"{symbol}_15m.csv"
+    funding_path = Path("data/external/funding") / f"{symbol}_funding_15m.csv"
+    oi_path = Path("data/external/open_interest") / f"{symbol}_oi_15m.csv"
 
     pipe_cfg = FeaturePipelineConfig(
         rule_allowed_hours=list(range(8, 18)),
         rule_allowed_weekdays=[0, 1, 2, 3, 4],
         use_rule_signals=True,
     )
-    df, _ = build_feature_pipeline_15m(df_raw, symbol=symbol, cfg=pipe_cfg)
+    df, _ = build_feature_pipeline_15m(
+        csv_ohlcv_path=str(ohlcv_path),
+        pipeline_cfg=pipe_cfg,
+        csv_funding_path=str(funding_path) if funding_path.exists() else None,
+        csv_oi_path=str(oi_path) if oi_path.exists() else None,
+    )
     print(f"[INFO] Prepared DF shape: {df.shape}")
 
     strat_cfg = RuleStrategyConfig(

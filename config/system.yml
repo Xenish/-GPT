@@ -1,0 +1,28 @@
+symbol: "BTCUSDT"
+timeframe: "15m"
+
+data:
+  ohlcv_path: "data/ohlcv/BTCUSDT_15m.csv"
+  funding_path: "data/external/funding/BTCUSDT_funding_15m.csv"
+  oi_path: "data/external/open_interest/BTCUSDT_oi_15m.csv"
+  features_path: "data/features/BTCUSDT_features_15m.csv"
+
+ml:
+  label:
+    horizon_bars: 8
+    tp_pct: 0.01
+    sl_pct: 0.01
+  model:
+    type: "random_forest"
+    random_state: 42
+    class_weight: "balanced_subsample"
+    n_estimators: 400
+    max_depth: null
+
+rule:
+  allowed_hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
+  allowed_weekdays: [0, 1, 2, 3, 4]
+
+features:
+  use_microstructure: true
+  use_market_structure: true

@@ -5,20 +5,23 @@ from typing import List, Optional, Tuple
 
 import pandas as pd
 
-from finantradealgo.core.candle_features import (
-    CandleFeatureConfig,
-    add_candlestick_features,
-)
-from finantradealgo.core.data import load_ohlcv_csv
+from finantradealgo.data_engine.loader import load_ohlcv_csv
 from finantradealgo.core.external_features import (
     ExternalFeatureConfig,
     add_external_features_15m,
 )
-from finantradealgo.core.features import FeatureConfig, add_basic_features
-from finantradealgo.core.multi_tf_features import MultiTFConfig, add_multitf_1h_features
-from finantradealgo.core.osc_features import OscFeatureConfig, add_osc_features
-from finantradealgo.core.rule_signals import RuleSignalConfig, add_rule_signals_v1
-from finantradealgo.core.ta_features import TAFeatureConfig, add_ta_features
+from finantradealgo.features.base_features import FeatureConfig, add_basic_features
+from finantradealgo.features.candle_features import (
+    CandleFeatureConfig,
+    add_candlestick_features,
+)
+from finantradealgo.features.multi_tf_features import (
+    MultiTFConfig,
+    add_multitf_1h_features,
+)
+from finantradealgo.features.osc_features import OscFeatureConfig, add_osc_features
+from finantradealgo.features.rule_signals import RuleSignalConfig, add_rule_signals_v1
+from finantradealgo.features.ta_features import TAFeatureConfig, add_ta_features
 
 
 @dataclass

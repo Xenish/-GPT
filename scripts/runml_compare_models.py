@@ -1,14 +1,21 @@
 from __future__ import annotations
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.append(str(ROOT))
+
 
 from typing import Dict, Tuple
 
 from sklearn.metrics import classification_report
 
-from finantradealgo.core.backtest import BacktestConfig, Backtester
-from finantradealgo.core.data import load_ohlcv_csv
-from finantradealgo.core.features import FeatureConfig, add_basic_features
+from finantradealgo.backtester.backtest_engine import BacktestConfig, Backtester
+from finantradealgo.data_engine.loader import load_ohlcv_csv
+from finantradealgo.features.base_features import FeatureConfig, add_basic_features
 from finantradealgo.core.report import ReportConfig, generate_report
-from finantradealgo.core.risk import RiskConfig, RiskEngine
+from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
 from finantradealgo.ml.model import SklearnModelConfig
 from finantradealgo.ml.walkforward import WalkForwardConfig, add_walkforward_ml_signals

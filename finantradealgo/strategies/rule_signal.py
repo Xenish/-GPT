@@ -9,7 +9,7 @@ from typing import Optional, Dict, Any
 
 import pandas as pd
 
-from finantradealgo.core.risk import RiskEngine
+from finantradealgo.risk.risk_engine import RiskEngine
 
 
 @dataclass

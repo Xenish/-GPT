@@ -1,12 +1,17 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+import json
+import os
+import sys
+from dataclasses import asdict, dataclass, field
+from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, List, Optional, Tuple
 
 import joblib
 import numpy as np
 import pandas as pd
+import sklearn
 from sklearn.ensemble import GradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import (
@@ -15,6 +20,8 @@ from sklearn.metrics import (
     recall_score,
     roc_auc_score,
 )
+
+from .labels import LabelConfig
 
 try:
     from xgboost import XGBClassifier
@@ -27,6 +34,44 @@ class SklearnModelConfig:
     model_type: str = "gradient_boosting"
     params: Dict[str, Any] = field(default_factory=dict)
     random_state: int = 42
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "SklearnModelConfig":
+        data = data or {}
+        model_type = data.get("type", data.get("model_type", cls.model_type))
+        random_state = data.get("random_state", cls.random_state)
+        params = data.get("params")
+        if params is None:
+            params = {
+                key: value
+                for key, value in data.items()
+                if key not in {"type", "model_type", "random_state"}
+            }
+        return cls(model_type=model_type, params=params, random_state=random_state)
+
+
+@dataclass
+class ModelMetadata:
+    model_id: str
+    symbol: str
+    timeframe: str
+    model_type: str
+    created_at: str
+    feature_preset: str
+    feature_cols: List[str]
+    label_config: Dict[str, Any]
+    train_start: str
+    train_end: str
+    metrics: Dict[str, float]
+    model_path: str
+    metrics_path: str
+    meta_path: str
+    pipeline_version: str = "unknown"
+    random_state: Optional[int] = None
+    python_version: str = ""
+    sklearn_version: str = ""
+    pandas_version: str = ""
+    pipeline_version: str = "unknown"
 
 
 class SklearnLongModel:
@@ -59,7 +104,7 @@ class SklearnLongModel:
             defaults.update(params)
             return LogisticRegression(**defaults)
 
-        if model_type in ("random_forest", "rf"):
+        if model_type in ("random_forest", "rf", "randomforest"):
             defaults = {
                 "n_estimators": 200,
                 "max_depth": None,
@@ -152,3 +197,80 @@ class SklearnLongModel:
         obj.clf = clf
         obj.is_fitted = True
         return obj
+
+
+def save_sklearn_model(
+    model: Any,
+    *,
+    symbol: str,
+    timeframe: str,
+    model_cfg: SklearnModelConfig,
+    label_cfg: LabelConfig,
+    feature_preset: str,
+    feature_cols: List[str],
+    train_start: pd.Timestamp,
+    train_end: pd.Timestamp,
+    metrics: Dict[str, float],
+    base_dir: str = "outputs/ml_models",
+    pipeline_version: str = "unknown",
+) -> ModelMetadata:
+    os.makedirs(base_dir, exist_ok=True)
+
+    ts_dt = datetime.utcnow()
+    ts_id = ts_dt.strftime("%Y%m%d_%H%M%S")
+    created_iso = ts_dt.isoformat()
+    model_id = f"{symbol}_{timeframe}_{model_cfg.model_type}_{ts_id}"
+
+    run_dir = os.path.join(base_dir, model_id)
+    os.makedirs(run_dir, exist_ok=True)
+
+    model_path = os.path.join(run_dir, "model.joblib")
+    metrics_path = os.path.join(run_dir, "metrics.csv")
+    meta_path = os.path.join(run_dir, "meta.json")
+
+    joblib.dump(model, model_path)
+
+    if metrics:
+        pd.DataFrame([metrics]).to_csv(metrics_path, index=False)
+
+    meta = ModelMetadata(
+        model_id=model_id,
+        symbol=symbol,
+        timeframe=timeframe,
+        model_type=model_cfg.model_type,
+        created_at=created_iso,
+        pipeline_version=pipeline_version,
+        feature_preset=feature_preset,
+        feature_cols=list(feature_cols),
+        label_config=asdict(label_cfg),
+        train_start=str(pd.to_datetime(train_start)),
+        train_end=str(pd.to_datetime(train_end)),
+        metrics=metrics,
+        random_state=getattr(model_cfg, "random_state", None),
+        python_version=sys.version,
+        sklearn_version=sklearn.__version__,
+        pandas_version=pd.__version__,
+        model_path=model_path,
+        metrics_path=metrics_path,
+        meta_path=meta_path,
+    )
+
+    with open(meta_path, "w", encoding="utf-8") as f:
+        json.dump(asdict(meta), f, ensure_ascii=False, indent=2)
+
+    return meta
+
+
+def load_sklearn_model(model_dir: str) -> Tuple[Any, ModelMetadata]:
+    meta_path = os.path.join(model_dir, "meta.json")
+    model_path = os.path.join(model_dir, "model.joblib")
+
+    if not os.path.exists(meta_path) or not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model artifacts missing under {model_dir}")
+
+    with open(meta_path, "r", encoding="utf-8") as f:
+        meta_dict = json.load(f)
+    meta = ModelMetadata(**meta_dict)
+
+    model = joblib.load(model_path)
+    return model, meta

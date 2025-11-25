@@ -8,28 +8,29 @@ if str(ROOT) not in sys.path:
 
 
 from finantradealgo.features.feature_pipeline_15m import (
-    FeaturePipelineConfig,
-    build_feature_pipeline_15m,
+    build_feature_pipeline_from_system_config,
 )
+from finantradealgo.system.config_loader import load_system_config
+
+
+def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str) -> None:
+    print(
+        f"[RUN] symbol={symbol} timeframe={timeframe} "
+        f"feature_preset={preset} pipeline_version={pipeline_version}"
+    )
 
 
 def main() -> None:
-    symbol = "BTCUSDT"
-    ohlcv_path = Path("data/ohlcv") / f"{symbol}_15m.csv"
-    funding_path = Path("data/external/funding") / f"{symbol}_funding_15m.csv"
-    oi_path = Path("data/external/open_interest") / f"{symbol}_oi_15m.csv"
+    sys_cfg = load_system_config()
+    data_cfg = sys_cfg.get("data", {})
+    symbol = sys_cfg.get("symbol", "BTCUSDT")
+    timeframe = sys_cfg.get("timeframe", "15m")
 
-    cfg = FeaturePipelineConfig(
-        rule_allowed_hours=list(range(8, 18)),
-        rule_allowed_weekdays=[0, 1, 2, 3, 4],
-    )
-
-    df_feat, feature_cols = build_feature_pipeline_15m(
-        csv_ohlcv_path=str(ohlcv_path),
-        pipeline_cfg=cfg,
-        csv_funding_path=str(funding_path) if funding_path.exists() else None,
-        csv_oi_path=str(oi_path) if oi_path.exists() else None,
-    )
+    df_feat, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
+    feature_cols = pipeline_meta.get("feature_cols", [])
+    preset = pipeline_meta.get("feature_preset", sys_cfg.get("features", {}).get("feature_preset", "extended"))
+    pipeline_version = pipeline_meta.get("pipeline_version", "unknown")
+    log_run_header(symbol, timeframe, preset, pipeline_version)
 
     print(f"[INFO] Feature DF shape: {df_feat.shape}")
     print("[INFO] First 40 columns:")
@@ -37,7 +38,8 @@ def main() -> None:
     print("[INFO] Last 5 rows:")
     print(df_feat.tail())
 
-    out_path = Path("data/features") / f"{symbol}_features_15m.csv"
+    features_dir = Path(data_cfg.get("features_dir", "data/features"))
+    out_path = features_dir / f"{symbol}_features_{timeframe}.csv"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df_feat.to_csv(out_path, index=False)
     print(f"[INFO] Saved features -> {out_path}")

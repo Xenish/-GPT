@@ -7,38 +7,38 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 
-from typing import Optional
-
 import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-from finantradealgo.features.feature_pipeline_15m import build_feature_pipeline_15m
+from finantradealgo.features.feature_pipeline_15m import (
+    build_feature_pipeline_from_system_config,
+    get_feature_cols_15m,
+)
 from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
 from finantradealgo.ml.model import SklearnLongModel, SklearnModelConfig
+from finantradealgo.system.config_loader import load_system_config
+
+
+def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str) -> None:
+    print(
+        f"[RUN] symbol={symbol} timeframe={timeframe} "
+        f"feature_preset={preset} pipeline_version={pipeline_version}"
+    )
 
 
 def main() -> None:
-    symbol = "BTCUSDT"
-    base_dir = Path("data")
-    ohlcv_path = base_dir / "ohlcv" / f"{symbol}_15m.csv"
-    funding_path = base_dir / "external" / "funding" / f"{symbol}_funding_15m.csv"
-    oi_path = base_dir / "external" / "open_interest" / f"{symbol}_oi_15m.csv"
+    sys_cfg = load_system_config()
+    symbol = sys_cfg.get("symbol", "BTCUSDT")
+    timeframe = sys_cfg.get("timeframe", "15m")
+    df_feat, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
 
-    if not ohlcv_path.exists():
-        raise FileNotFoundError(f"Missing OHLCV CSV at {ohlcv_path}")
+    preset = pipeline_meta.get("feature_preset") or sys_cfg.get("features", {}).get("feature_preset", "extended")
+    feature_cols = pipeline_meta.get("feature_cols") or get_feature_cols_15m(df_feat, preset)
+    pipeline_version = pipeline_meta.get("pipeline_version", "unknown")
+    log_run_header(symbol, timeframe, preset, pipeline_version)
 
-    df_feat, feature_cols = build_feature_pipeline_15m(
-        csv_ohlcv_path=str(ohlcv_path),
-        csv_funding_path=str(funding_path) if funding_path.exists() else None,
-        csv_oi_path=str(oi_path) if oi_path.exists() else None,
-    )
-
-    label_cfg = LabelConfig(
-        horizon=8,
-        pos_threshold=0.003,
-        fee_slippage=0.001,
-    )
+    label_cfg = LabelConfig.from_dict(sys_cfg.get("ml", {}).get("label"))
     df_lab = add_long_only_labels(df_feat, label_cfg)
 
     target_col = "label_long"
@@ -59,17 +59,7 @@ def main() -> None:
 
     print(f"[INFO] Train size: {len(X_train)}, Test size: {len(X_test)}")
 
-    model_cfg = SklearnModelConfig(
-        model_type="random_forest",
-        params={
-            "n_estimators": 400,
-            "max_depth": None,
-            "min_samples_leaf": 2,
-            "class_weight": "balanced_subsample",
-            "n_jobs": -1,
-        },
-        random_state=42,
-    )
+    model_cfg = SklearnModelConfig.from_dict(sys_cfg.get("ml", {}).get("model"))
     model = SklearnLongModel(model_cfg)
     model.fit(X_train, y_train)
 
@@ -92,6 +82,7 @@ def main() -> None:
         [
             {
                 "symbol": symbol,
+                "timeframe": timeframe,
                 "precision": precision,
                 "recall": recall,
                 "f1": f1,

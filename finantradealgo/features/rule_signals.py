@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Optional, List
+from typing import List, Optional
 
 import pandas as pd
 
@@ -24,6 +24,40 @@ class RuleSignalConfig:
     use_patterns: bool = False
     allowed_hours: Optional[List[int]] = None
     allowed_weekdays: Optional[List[int]] = None
+    use_ms_trend_filter: bool = False
+    ms_trend_min: float = -0.5
+    ms_trend_max: float = 1.5
+    use_ms_chop_filter: bool = False
+    allow_chop: bool = False
+    use_fvg_filter: bool = False
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "RuleSignalConfig":
+        data = data or {}
+        return cls(
+            htf_trend_min=data.get("htf_trend_min", cls.htf_trend_min),
+            htf_rsi_min=data.get("htf_rsi_min", cls.htf_rsi_min),
+            htf_rsi_max=data.get("htf_rsi_max", cls.htf_rsi_max),
+            atr_pct_min=data.get("atr_pct_min", cls.atr_pct_min),
+            atr_pct_max=data.get("atr_pct_max", cls.atr_pct_max),
+            rsi_entry_min=data.get("rsi_entry_min", cls.rsi_entry_min),
+            rsi_entry_max=data.get("rsi_entry_max", cls.rsi_entry_max),
+            macd_entry_min=data.get("macd_entry_min", cls.macd_entry_min),
+            stoch_k_entry_min=data.get("stoch_k_entry_min", cls.stoch_k_entry_min),
+            stoch_k_entry_max=data.get("stoch_k_entry_max", cls.stoch_k_entry_max),
+            min_body_pct=data.get("min_body_pct", cls.min_body_pct),
+            trend_exit_max=data.get("trend_exit_max", cls.trend_exit_max),
+            rsi_exit_max=data.get("rsi_exit_max", cls.rsi_exit_max),
+            use_patterns=data.get("use_patterns", cls.use_patterns),
+            allowed_hours=data.get("allowed_hours"),
+            allowed_weekdays=data.get("allowed_weekdays"),
+            use_ms_trend_filter=data.get("use_ms_trend_filter", cls.use_ms_trend_filter),
+            ms_trend_min=data.get("ms_trend_min", cls.ms_trend_min),
+            ms_trend_max=data.get("ms_trend_max", cls.ms_trend_max),
+            use_ms_chop_filter=data.get("use_ms_chop_filter", cls.use_ms_chop_filter),
+            allow_chop=data.get("allow_chop", cls.allow_chop),
+            use_fvg_filter=data.get("use_fvg_filter", cls.use_fvg_filter),
+        )
 
 
 def build_rule_signals(
@@ -54,6 +88,36 @@ def build_rule_signals(
         & cond_stoch
         & cond_body
     )
+
+    if cfg.use_ms_trend_filter:
+        trend_col = _resolve_ms_column(
+            df,
+            ["ms_trend_state", "ms_trend_regime", "ms_trend"],
+            "Microstructure trend",
+        )
+        cond_ms_trend = df[trend_col].between(cfg.ms_trend_min, cfg.ms_trend_max)
+        entry_core = entry_core & cond_ms_trend
+
+    if cfg.use_ms_chop_filter:
+        chop_col = _resolve_ms_column(
+            df,
+            ["ms_chop_flag", "ms_chop"],
+            "Microstructure chop",
+        )
+        chop_series = df[chop_col].fillna(0).astype(int)
+        if cfg.allow_chop:
+            cond_chop = pd.Series(True, index=df.index)
+        else:
+            cond_chop = chop_series == 0
+        entry_core = entry_core & cond_chop
+
+    if cfg.use_fvg_filter:
+        fvg_col = _resolve_ms_column(
+            df,
+            ["ms_fvg_up"],
+            "FVG (up)",
+        )
+        entry_core = entry_core & (df[fvg_col] == 1)
 
     if cfg.use_patterns:
         patt = (
@@ -93,3 +157,10 @@ def add_rule_signals_v1(
     config: Optional[RuleSignalConfig] = None,
 ) -> pd.DataFrame:
     return build_rule_signals(df, config)
+
+
+def _resolve_ms_column(df: pd.DataFrame, candidates: List[str], label: str) -> str:
+    for col in candidates:
+        if col in df.columns:
+            return col
+    raise ValueError(f"{label} kolonu bulunamadı. Aranan kolonlar: {candidates}")

@@ -128,4 +128,5 @@ def generate_report(
         "regime_stats": regime_stats,
         "equity_curve": equity_curve,
         "trades": trades,
+        "risk_stats": backtest_result.get("risk_stats", {}),
     }

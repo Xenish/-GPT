@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Optional
 
 import numpy as np
 import pandas as pd
@@ -10,7 +11,26 @@ import pandas as pd
 class LabelConfig:
     horizon: int = 5
     pos_threshold: float = 0.003
+    neg_threshold: float = -0.003
     fee_slippage: float = 0.001
+    method: str = "simple"
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "LabelConfig":
+        data = data or {}
+        return cls(
+            horizon=data.get("horizon_bars", data.get("horizon", cls.horizon)),
+            pos_threshold=data.get(
+                "up_threshold",
+                data.get("pos_threshold", cls.pos_threshold),
+            ),
+            neg_threshold=data.get(
+                "down_threshold",
+                data.get("neg_threshold", cls.neg_threshold),
+            ),
+            fee_slippage=data.get("fee_slippage", cls.fee_slippage),
+            method=data.get("method", cls.method),
+        )
 
 
 def add_long_only_labels(

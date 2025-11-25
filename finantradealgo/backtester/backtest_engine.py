@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
@@ -42,10 +43,14 @@ class Backtester:
 
         self.strategy.init(df)
         trades = []
+        daily_realized_pnl: Dict[pd.Timestamp, float] = defaultdict(float)
+        daily_blocked_entries: Dict[pd.Timestamp, int] = defaultdict(int)
+        equity_start_of_day: Dict[pd.Timestamp, float] = {}
 
         for i, row in df.iterrows():
             price_close = float(row["close"])
-            ts = row["timestamp"]
+            ts = pd.to_datetime(row["timestamp"])
+            day_key = ts.normalize()
 
             if portfolio.position is not None:
                 position = portfolio.position
@@ -91,15 +96,20 @@ class Backtester:
                         exit_reason = "TAKE_PROFIT"
 
                 if exit_price is not None:
-                    self._close_position(
+                    pnl = self._close_position(
                         portfolio=portfolio,
                         exit_price=exit_price,
                         timestamp=ts,
                         reason=exit_reason,
                         trades=trades,
                     )
+                    if pnl is not None:
+                        exit_day = ts.normalize()
+                        daily_realized_pnl[exit_day] += float(pnl)
 
             portfolio.update_equity(price_close)
+            if day_key not in equity_start_of_day:
+                equity_start_of_day[day_key] = portfolio.equity
             ctx = StrategyContext(
                 equity=portfolio.equity,
                 position=portfolio.position,
@@ -110,28 +120,49 @@ class Backtester:
 
             if portfolio.position is None:
                 if signal == "LONG":
-                    self._open_position(
+                    blocked = self._attempt_open(
                         side="LONG",
                         portfolio=portfolio,
                         row=row,
                         trades=trades,
+                        ts=ts,
+                        day_key=day_key,
+                        price=price_close,
+                        atr=row.get("atr_14"),
+                        equity_start_of_day=equity_start_of_day[day_key],
+                        daily_realized_pnl=daily_realized_pnl,
+                        daily_blocked_entries=daily_blocked_entries,
                     )
+                    if blocked:
+                        continue
                 elif signal == "SHORT":
-                    self._open_position(
+                    blocked = self._attempt_open(
                         side="SHORT",
                         portfolio=portfolio,
                         row=row,
                         trades=trades,
+                        ts=ts,
+                        day_key=day_key,
+                        price=price_close,
+                        atr=row.get("atr_14"),
+                        equity_start_of_day=equity_start_of_day[day_key],
+                        daily_realized_pnl=daily_realized_pnl,
+                        daily_blocked_entries=daily_blocked_entries,
                     )
+                    if blocked:
+                        continue
             else:
                 if signal == "CLOSE":
-                    self._close_position(
+                    pnl = self._close_position(
                         portfolio=portfolio,
                         exit_price=price_close,
                         timestamp=ts,
                         reason="SIGNAL_CLOSE",
                         trades=trades,
                     )
+                    if pnl is not None:
+                        exit_day = ts.normalize()
+                        daily_realized_pnl[exit_day] += float(pnl)
                 else:
                     current_side = portfolio.position.side
                     if (
@@ -139,36 +170,104 @@ class Backtester:
                         and signal in ("LONG", "SHORT")
                         and signal is not None
                         and signal != current_side
-                    ):
-                        self._close_position(
-                            portfolio=portfolio,
-                            exit_price=price_close,
-                            timestamp=ts,
-                            reason="FLIP",
-                            trades=trades,
-                        )
-                        self._open_position(
-                            side=signal,
-                            portfolio=portfolio,
-                            row=row,
-                            trades=trades,
-                        )
+                        ):
+                            pnl = self._close_position(
+                                portfolio=portfolio,
+                                exit_price=price_close,
+                                timestamp=ts,
+                                reason="FLIP",
+                                trades=trades,
+                            )
+                            if pnl is not None:
+                                exit_day = ts.normalize()
+                                daily_realized_pnl[exit_day] += float(pnl)
+                            blocked = self._attempt_open(
+                                side=signal,
+                                portfolio=portfolio,
+                                row=row,
+                                trades=trades,
+                                ts=ts,
+                                day_key=day_key,
+                                price=price_close,
+                                atr=row.get("atr_14"),
+                                equity_start_of_day=equity_start_of_day[day_key],
+                                daily_realized_pnl=daily_realized_pnl,
+                                daily_blocked_entries=daily_blocked_entries,
+                            )
+                            if blocked:
+                                continue
 
             portfolio.record(ts, price_close)
 
         if portfolio.position is not None:
             last_row = df.iloc[-1]
-            self._close_position(
+            last_ts = pd.to_datetime(last_row["timestamp"])
+            pnl = self._close_position(
                 portfolio=portfolio,
                 exit_price=float(last_row["close"]),
-                timestamp=last_row["timestamp"],
+                timestamp=last_ts,
                 reason="END_OF_DATA",
                 trades=trades,
             )
+            if pnl is not None:
+                exit_day = last_ts.normalize()
+                daily_realized_pnl[exit_day] += float(pnl)
             portfolio.record(last_row["timestamp"], float(last_row["close"]))
 
-        result = self._build_result(portfolio, trades)
+        risk_stats = {
+            "daily_realized_pnl": {str(k.date()): v for k, v in daily_realized_pnl.items()},
+            "blocked_entries": {str(k.date()): v for k, v in daily_blocked_entries.items()},
+        }
+
+        result = self._build_result(portfolio, trades, risk_stats)
         return result
+
+    def _attempt_open(
+        self,
+        *,
+        side: str,
+        portfolio: Portfolio,
+        row: pd.Series,
+        trades: list,
+        ts: pd.Timestamp,
+        day_key: pd.Timestamp,
+        price: float,
+        atr,
+        equity_start_of_day: float,
+        daily_realized_pnl: Dict[pd.Timestamp, float],
+        daily_blocked_entries: Dict[pd.Timestamp, int],
+    ) -> bool:
+        realized_today = daily_realized_pnl.get(day_key, 0.0)
+        if not self.risk_engine.can_open_new_trade(
+            current_date=day_key,
+            equity_start_of_day=equity_start_of_day,
+            realized_pnl_today=realized_today,
+            row=row,
+        ):
+            daily_blocked_entries[day_key] += 1
+            print(f"[RISK] Blocked entry at {ts} due to guard or loss limit.")
+            return True
+
+        qty = self.risk_engine.calc_position_size(
+            equity=portfolio.equity,
+            price=price,
+            atr=atr,
+            row=row,
+        )
+        if qty <= 0:
+            daily_blocked_entries[day_key] += 1
+            print(f"[RISK] Computed size <= 0 at {ts}; entry skipped.")
+            return True
+
+        self._open_position(
+            side=side,
+            portfolio=portfolio,
+            row=row,
+            trades=trades,
+            qty=qty,
+            timestamp=ts,
+        )
+        return False
 
     def _open_position(
         self,
@@ -176,9 +275,11 @@ class Backtester:
         portfolio: Portfolio,
         row: pd.Series,
         trades: list,
+        qty: Optional[float] = None,
+        timestamp: Optional[pd.Timestamp] = None,
     ) -> None:
         price = float(row["close"])
-        ts = row["timestamp"]
+        ts = timestamp or row["timestamp"]
 
         if side == "LONG":
             entry_price = price * (1 + self.config.slippage_pct)
@@ -187,16 +288,17 @@ class Backtester:
         else:
             return
 
-        qty = self.risk_engine.get_position_size(entry_price, portfolio.equity)
+        if qty is None:
+            qty = self.risk_engine.calc_position_size(
+                equity=portfolio.equity,
+                price=price,
+                atr=row.get("atr_14"),
+                row=row,
+            )
         if qty <= 0:
             return
 
-        max_notional = portfolio.equity * self.risk_engine.config.max_leverage
         notional = entry_price * qty
-        if notional > max_notional:
-            qty = max_notional / entry_price
-            notional = entry_price * qty
-
         fee_pct = self.config.fee_pct
         commission_open = notional * fee_pct
         total_cost = notional + commission_open
@@ -257,9 +359,9 @@ class Backtester:
         timestamp,
         reason: str,
         trades: list,
-    ) -> None:
+    ) -> Optional[float]:
         if portfolio.position is None:
-            return
+            return None
 
         position = portfolio.position
         qty = position.qty
@@ -298,8 +400,14 @@ class Backtester:
                 break
 
         portfolio.position = None
+        return net_pnl
 
-    def _build_result(self, portfolio: Portfolio, trades: list) -> Dict[str, Any]:
+    def _build_result(
+        self,
+        portfolio: Portfolio,
+        trades: list,
+        risk_stats: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
         import numpy as np
 
         equity_series = pd.Series(
@@ -335,4 +443,58 @@ class Backtester:
             result["max_drawdown"] = 0.0
             result["sharpe"] = 0.0
 
+        result["risk_stats"] = risk_stats or {}
         return result
+
+
+class BacktestEngine:
+    """
+    Thin orchestration wrapper that normalizes the output of Backtester
+    so downstream callers and tests can rely on a consistent interface.
+    """
+
+    def __init__(
+        self,
+        *,
+        strategy: BaseStrategy,
+        risk_engine: Optional[RiskEngine] = None,
+        config: Optional[BacktestConfig] = None,
+        price_col: str = "close",
+        timestamp_col: str = "timestamp",
+    ) -> None:
+        self.price_col = price_col
+        self.timestamp_col = timestamp_col
+        self._backtester = Backtester(
+            strategy=strategy,
+            risk_engine=risk_engine,
+            config=config,
+        )
+
+    def _validate_input(self, df: pd.DataFrame) -> None:
+        missing = [col for col in (self.price_col, self.timestamp_col) if col not in df.columns]
+        if missing:
+            raise ValueError(f"DataFrame missing required columns for backtest: {missing}")
+
+    def run(self, df: pd.DataFrame) -> Dict[str, Any]:
+        self._validate_input(df)
+        raw = self._backtester.run(df)
+        trades = raw.get("trades", pd.DataFrame())
+        if trades is None:
+            trades = pd.DataFrame()
+
+        metrics = {
+            "initial_cash": raw.get("initial_cash"),
+            "final_equity": raw.get("final_equity"),
+            "cum_return": raw.get("cum_return"),
+            "max_drawdown": raw.get("max_drawdown"),
+            "sharpe": raw.get("sharpe"),
+            "trade_count": int(len(trades)) if isinstance(trades, pd.DataFrame) else 0,
+        }
+
+        return {
+            "equity_curve": raw.get("equity_curve"),
+            "trades": trades,
+            "metrics": metrics,
+            "risk_stats": raw.get("risk_stats", {}),
+            "raw_result": raw,
+        }

@@ -7,49 +7,50 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 
+import pandas as pd
+
 from finantradealgo.backtester.backtest_engine import BacktestConfig, Backtester
 from finantradealgo.features.feature_pipeline_15m import (
-    FeaturePipelineConfig,
-    build_feature_pipeline_15m,
+    PIPELINE_VERSION_15M,
+    build_feature_pipeline_from_system_config,
 )
 from finantradealgo.core.report import ReportConfig, generate_report
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
+from finantradealgo.system.config_loader import load_system_config
 
 
-def run_rule_backtest_15m() -> None:
-    symbol = "BTCUSDT"
-    ohlcv_path = Path("data/ohlcv") / f"{symbol}_15m.csv"
-    funding_path = Path("data/external/funding") / f"{symbol}_funding_15m.csv"
-    oi_path = Path("data/external/open_interest") / f"{symbol}_oi_15m.csv"
-
-    pipe_cfg = FeaturePipelineConfig(
-        rule_allowed_hours=list(range(8, 18)),
-        rule_allowed_weekdays=[0, 1, 2, 3, 4],
-        use_rule_signals=True,
+def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str, extra: str | None = None) -> None:
+    msg = (
+        f"[RUN] symbol={symbol} timeframe={timeframe} "
+        f"feature_preset={preset} pipeline_version={pipeline_version}"
     )
-    df, _ = build_feature_pipeline_15m(
-        csv_ohlcv_path=str(ohlcv_path),
-        pipeline_cfg=pipe_cfg,
-        csv_funding_path=str(funding_path) if funding_path.exists() else None,
-        csv_oi_path=str(oi_path) if oi_path.exists() else None,
-    )
-    print(f"[INFO] Prepared DF shape: {df.shape}")
+    if extra:
+        msg += f" {extra}"
+    print(msg)
 
-    strat_cfg = RuleStrategyConfig(
-        entry_col="rule_long_entry",
-        exit_col="rule_long_exit",
-        warmup_bars=pipe_cfg.rule_allowed_hours[0] if pipe_cfg.rule_allowed_hours else 50,
-    )
+
+def run_rule_backtest(
+    sys_cfg: dict | None = None,
+    df: pd.DataFrame | None = None,
+) -> tuple[dict, pd.DataFrame, dict]:
+    sys_cfg = sys_cfg or load_system_config()
+
+    if df is None:
+        df, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
+    else:
+        df = df.copy()
+        pipeline_meta = {
+            "feature_preset": sys_cfg.get("features", {}).get("feature_preset", "extended"),
+            "pipeline_version": PIPELINE_VERSION_15M,
+            "symbol": sys_cfg.get("symbol", "BTCUSDT"),
+            "timeframe": sys_cfg.get("timeframe", "15m"),
+        }
+
+    strat_cfg = RuleStrategyConfig.from_dict(sys_cfg.get("risk"))
     strategy = RuleSignalStrategy(strat_cfg)
 
-    risk_engine = RiskEngine(
-        RiskConfig(
-            risk_per_trade=0.01,
-            stop_loss_pct=0.02,
-            max_leverage=1.0,
-        )
-    )
+    risk_engine = RiskEngine(RiskConfig.from_dict(sys_cfg.get("risk")))
 
     bt_config = BacktestConfig(
         initial_cash=10_000.0,
@@ -67,6 +68,26 @@ def run_rule_backtest_15m() -> None:
 
     report_cfg = ReportConfig(regime_columns=["regime_trend", "regime_vol"])
     report = generate_report(result, df=df, config=report_cfg)
+    report["risk_stats"] = result.get("risk_stats", {})
+    return report, df, pipeline_meta
+
+
+def _ensure_output_dirs() -> tuple[Path, Path]:
+    bt_dir = Path("outputs") / "backtests"
+    tr_dir = Path("outputs") / "trades"
+    bt_dir.mkdir(parents=True, exist_ok=True)
+    tr_dir.mkdir(parents=True, exist_ok=True)
+    return bt_dir, tr_dir
+
+
+def main() -> None:
+    report, df, meta = run_rule_backtest()
+    symbol = meta.get("symbol", "UNKNOWN")
+    timeframe = meta.get("timeframe", "UNKNOWN")
+    preset = meta.get("feature_preset", "extended")
+    pipeline_version = meta.get("pipeline_version", PIPELINE_VERSION_15M)
+    log_run_header(symbol, timeframe, preset, pipeline_version, extra="mode=rule_backtest")
+    print(f"[INFO] Prepared DF shape: {df.shape}")
 
     eq = report["equity_metrics"]
     ts = report["trade_stats"]
@@ -88,10 +109,21 @@ def run_rule_backtest_15m() -> None:
     print(f"  ProfitFactor : {ts['profit_factor']}")
     print(f"  Median hold  : {ts['median_hold_time']}")
 
-    report["equity_curve"].to_csv("rule_equity_curve_15m.csv", header=True)
-    report["trades"].to_csv("rule_trades_15m.csv", index=False)
-    print("\n[INFO] Saved rule_equity_curve_15m.csv and rule_trades_15m.csv")
+    risk_stats = report.get("risk_stats", {}) or {}
+    blocked_total = sum(risk_stats.get("blocked_entries", {}).values())
+    print(f"[RISK] blocked_entries_total={blocked_total}")
+
+    bt_dir, tr_dir = _ensure_output_dirs()
+    eq_path = bt_dir / "rule_equity_15m.csv"
+    trades_path = tr_dir / "rule_trades_15m.csv"
+    report["equity_curve"].to_csv(eq_path, header=True)
+    report["trades"].to_csv(trades_path, index=False)
+    print(f"\n[INFO] Saved {eq_path} and {trades_path}")
+
+
+def run_rule_backtest_15m() -> None:
+    main()
 
 
 if __name__ == "__main__":
-    run_rule_backtest_15m()
+    main()

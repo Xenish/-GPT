@@ -31,6 +31,7 @@ class RuleStrategyConfig:
 
     # Overlay 1: max hold
     max_hold_bars: int = 4 * 24 * 4  # 4 gün (15m barlar)
+    min_hold_bars: int = 1
 
     # Overlay 2: rule exit kullan
     use_rule_exit: bool = True
@@ -40,6 +41,27 @@ class RuleStrategyConfig:
     atr_col: str = "atr_14_pct"
     tp_atr_mult: float = 2.0
     sl_atr_mult: float = 1.0
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "RuleStrategyConfig":
+        data = data or {}
+        atr_period = data.get("atr_period")
+        atr_col = data.get("atr_col")
+        if atr_col is None and atr_period:
+            atr_col = f"atr_{atr_period}_pct"
+
+        return cls(
+            entry_col=data.get("entry_col", cls.entry_col),
+            exit_col=data.get("exit_col", cls.exit_col),
+            warmup_bars=data.get("warmup_bars", cls.warmup_bars),
+            max_hold_bars=data.get("max_hold_bars", cls.max_hold_bars),
+            min_hold_bars=data.get("min_hold_bars", cls.min_hold_bars),
+            use_rule_exit=data.get("use_rule_exit", cls.use_rule_exit),
+            use_atr_tp_sl=data.get("use_atr_tp_sl", cls.use_atr_tp_sl),
+            atr_col=atr_col or cls.atr_col,
+            tp_atr_mult=data.get("atr_mult_tp", data.get("tp_atr_mult", cls.tp_atr_mult)),
+            sl_atr_mult=data.get("atr_mult_sl", data.get("sl_atr_mult", cls.sl_atr_mult)),
+        )
 
 
 class RuleSignalStrategy(BaseStrategy):
@@ -176,14 +198,15 @@ class RuleSignalStrategy(BaseStrategy):
                     self._reset_position_state()
                     return "CLOSE"
 
-        # 2) Max hold bars overlay
+        # 2) Max/min hold overlay
         self._bars_in_position += 1
-        if self.config.max_hold_bars > 0 and self._bars_in_position >= self.config.max_hold_bars:
+        bars_held = self._bars_in_position
+        if self.config.max_hold_bars > 0 and bars_held >= self.config.max_hold_bars:
             self._reset_position_state()
             return "CLOSE"
 
         # 3) Rule exit (signal tekrar 0'a dönmüşse ya da exit_col tetiklenmişse)
-        if self.config.use_rule_exit:
+        if self.config.use_rule_exit and bars_held >= self.config.min_hold_bars:
             if sig <= 0:
                 self._reset_position_state()
                 return "CLOSE"

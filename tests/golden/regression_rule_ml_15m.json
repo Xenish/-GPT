@@ -1,0 +1,10 @@
+{
+  "rule": {
+    "final_equity": 10000.0,
+    "trade_count": 0
+  },
+  "ml": {
+    "final_equity": 10037.680683224244,
+    "trade_count": 16
+  }
+}

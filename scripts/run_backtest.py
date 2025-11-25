@@ -13,19 +13,23 @@ from finantradealgo.features.base_features import FeatureConfig, add_basic_featu
 from finantradealgo.core.report import ReportConfig, generate_report
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ema_cross import EMACrossStrategy
+from finantradealgo.system.config_loader import load_system_config
 
 
 
 def main() -> None:
-    df = load_ohlcv_csv("data/ohlcv/BTCUSDT_15m.csv")
+    sys_cfg = load_system_config()
+    data_cfg = sys_cfg.get("data", {})
+    symbol = sys_cfg.get("symbol", "BTCUSDT")
+    timeframe = sys_cfg.get("timeframe", "15m")
+    ohlcv_path = Path(data_cfg.get("ohlcv_dir", "data/ohlcv")) / f"{symbol}_{timeframe}.csv"
+    df = load_ohlcv_csv(str(ohlcv_path))
 
     feat_config = FeatureConfig()
     df_feat = add_basic_features(df, feat_config)
 
     strategy = EMACrossStrategy(fast=20, slow=50)
-    risk_engine = RiskEngine(
-        RiskConfig(risk_per_trade=0.01, stop_loss_pct=0.01, max_leverage=1.0)
-    )
+    risk_engine = RiskEngine(RiskConfig.from_dict(sys_cfg.get("risk")))
     bt_config = BacktestConfig(
         initial_cash=10_000.0,
         fee_pct=0.0004,

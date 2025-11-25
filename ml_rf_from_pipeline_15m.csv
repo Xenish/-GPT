@@ -1,2 +1,2 @@
-symbol,precision,recall,f1,accuracy,train_size,test_size,feature_count
-BTCUSDT,0.14960629921259844,0.10734463276836158,0.125,0.7231089521165857,6723,2882,92
+symbol,timeframe,precision,recall,f1,accuracy,train_size,test_size,feature_count
+AIAUSDT,15m,0.4132841328413284,0.1891891891891892,0.25955967555040554,0.6067692307692307,3790,1625,92

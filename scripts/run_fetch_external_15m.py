@@ -13,11 +13,26 @@ from typing import List
 import pandas as pd
 import requests
 
-SYMBOL = "BTCUSDT"
-OHLCV_CSV = "data/ohlcv/BTCUSDT_15m.csv"
+from finantradealgo.system.config_loader import load_system_config
 
-FUNDING_OUT_CSV = "data/external/funding/BTCUSDT_funding_15m.csv"
-OI_OUT_CSV = "data/external/open_interest/BTCUSDT_oi_15m.csv"
+SYS_CFG = load_system_config()
+DATA_CFG = SYS_CFG.get("data", {})
+SYMBOL = SYS_CFG.get("symbol", "BTCUSDT")
+TIMEFRAME = SYS_CFG.get("timeframe", "15m")
+OHLCV_CSV = (
+    Path(DATA_CFG.get("ohlcv_dir", "data/ohlcv")) / f"{SYMBOL}_{TIMEFRAME}.csv"
+)
+
+FUNDING_OUT_CSV = (
+    Path(DATA_CFG.get("external_dir", "data/external"))
+    / "funding"
+    / f"{SYMBOL}_funding_{TIMEFRAME}.csv"
+)
+OI_OUT_CSV = (
+    Path(DATA_CFG.get("external_dir", "data/external"))
+    / "open_interest"
+    / f"{SYMBOL}_oi_{TIMEFRAME}.csv"
+)
 
 
 def _load_time_range_from_ohlcv() -> tuple[int, int]:
@@ -144,13 +159,13 @@ def main() -> None:
 
     df_funding = fetch_funding(SYMBOL, start_ms, end_ms)
     if not df_funding.empty:
-        Path(FUNDING_OUT_CSV).parent.mkdir(parents=True, exist_ok=True)
+        FUNDING_OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
         df_funding.to_csv(FUNDING_OUT_CSV, index=False)
         print(f"[INFO] Saved funding CSV -> {FUNDING_OUT_CSV}")
 
     df_oi = fetch_oi_15m(SYMBOL, start_ms, end_ms)
     if not df_oi.empty:
-        Path(OI_OUT_CSV).parent.mkdir(parents=True, exist_ok=True)
+        OI_OUT_CSV.parent.mkdir(parents=True, exist_ok=True)
         df_oi.to_csv(OI_OUT_CSV, index=False)
         print(f"[INFO] Saved OI CSV -> {OI_OUT_CSV}")
 

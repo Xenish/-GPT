@@ -1,28 +1,106 @@
-symbol: "BTCUSDT"
+symbol: "AIAUSDT"
 timeframe: "15m"
 
 data:
-  ohlcv_path: "data/ohlcv/BTCUSDT_15m.csv"
-  funding_path: "data/external/funding/BTCUSDT_funding_15m.csv"
-  oi_path: "data/external/open_interest/BTCUSDT_oi_15m.csv"
-  features_path: "data/features/BTCUSDT_features_15m.csv"
+  ohlcv_dir: "data/ohlcv"
+  external_dir: "data/external"
+  features_dir: "data/features"
 
-ml:
-  label:
-    horizon_bars: 8
-    tp_pct: 0.01
-    sl_pct: 0.01
-  model:
-    type: "random_forest"
-    random_state: 42
-    class_weight: "balanced_subsample"
-    n_estimators: 400
-    max_depth: null
+features:
+  use_htf: true
+  use_microstructure: true
+  use_market_structure: true
+  use_external: true
+  drop_na: true
+  feature_preset: "extended"
 
 rule:
   allowed_hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
   allowed_weekdays: [0, 1, 2, 3, 4]
+  htf_trend_min: -0.05
+  htf_rsi_min: 40.0
+  htf_rsi_max: 75.0
+  atr_pct_min: 0.002
+  atr_pct_max: 0.08
+  rsi_entry_min: 45.0
+  rsi_entry_max: 75.0
+  macd_entry_min: -0.001
+  stoch_k_entry_min: 20.0
+  stoch_k_entry_max: 85.0
+  min_body_pct: 0.08
+  trend_exit_max: -0.10
+  rsi_exit_max: 45.0
+  use_ms_trend_filter: true
+  ms_trend_min: -0.5
+  ms_trend_max: 1.5
+  use_ms_chop_filter: true
+  allow_chop: false
+  use_fvg_filter: false
 
-features:
-  use_microstructure: true
-  use_market_structure: true
+risk:
+  capital_risk_pct_per_trade: 0.01
+  max_leverage: 5.0
+  max_notional_per_symbol: 2000.0
+  max_daily_loss_pct: 0.03
+  daily_loss_lookback_days: 1
+  min_hold_bars: 2
+  use_tail_risk_guard: true
+  tail_risk_hv_threshold: 0.25
+  tail_risk_max_leverage_in_crash: 1.0
+  atr_period: 14
+  atr_mult_tp: 1.5
+  atr_mult_sl: 1.0
+  warmup_bars: 50
+
+ml:
+  label:
+    method: "fixed_horizon"
+    horizon_bars: 8
+    up_threshold: 0.004
+    down_threshold: -0.004
+  model:
+    type: "RandomForest"
+    n_estimators: 200
+    max_depth: 6
+    min_samples_leaf: 50
+    random_state: 42
+  backtest:
+    proba_column: "ml_proba_long"
+    proba_threshold: 0.55
+    proba_exit_threshold: 0.50
+    warmup_bars: 200
+    side: "long_only"
+    allow_pipeline_mismatch: false
+    use_saved_model: false
+    model_id: null
+  persistence:
+    save_model: true
+    model_dir: "outputs/ml_models"
+    use_registry: true
+    max_models_per_symbol_tf: 10
+  registry:
+    use_latest: true
+    selected_id: null
+
+strategy:
+  default: "rule"
+
+live:
+  mode: "replay"
+  exchange: "binance_futures"
+  symbol: "AIAUSDT"
+  timeframe: "15m"
+  ws_enabled: false
+  rest_poll_sec: 5
+  max_concurrent_positions: 1
+  log_dir: "outputs/live_logs"
+  log_level: "INFO"
+  replay:
+    bars_limit: 500
+    start_index: 0
+    start_timestamp:
+  paper:
+    initial_cash: 10000
+    save_state_every_n_bars: 25
+    state_path: "outputs/live_state/paper_state.json"
+    output_dir: "outputs/live_paper"

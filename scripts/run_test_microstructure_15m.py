@@ -30,10 +30,11 @@ def main() -> None:
         drop_na=False,
     )
 
-    df, feat_cols = build_feature_pipeline_15m(
+    df, meta = build_feature_pipeline_15m(
         csv_ohlcv_path=str(ohlcv_path),
         pipeline_cfg=cfg,
     )
+    feat_cols = meta.get("feature_cols", [])
 
     ms_cols = [c for c in df.columns if c.startswith("ms_")]
     print("Microstructure columns:", ms_cols)

@@ -152,7 +152,7 @@ def run_for_model(
 
 
 def main() -> None:
-    df = load_ohlcv_csv("data/AIAUSDT_P_15m.csv")
+    df = load_ohlcv_csv("data/BTCUSDT_P_15m.csv")
     df = df.tail(10_000).copy()
 
     feat_config = FeatureConfig()

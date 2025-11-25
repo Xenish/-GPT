@@ -45,7 +45,7 @@ def prepare_ml_dataset_15m(path: str) -> tuple[pd.DataFrame, pd.Series]:
 
 def main() -> None:
     # 15 dakikalık veriyi kullan
-    X, y = prepare_ml_dataset_15m("data/AIAUSDT_P_15m.csv")
+    X, y = prepare_ml_dataset_15m("data/BTCUSDT_P_15m.csv")
 
     # Basit zaman tabanlı split (shuffle yok)
     split_idx = int(len(X) * 0.7)

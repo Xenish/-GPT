@@ -12,7 +12,7 @@ from finantradealgo.core.features import FeatureConfig, add_basic_features
 
 
 def main() -> None:
-    df = load_ohlcv_csv("data/AIAUSDT_P_15m.csv")
+    df = load_ohlcv_csv("data/BTCUSDT_P_15m.csv")
 
     feat_config = FeatureConfig()
     df_feat = add_basic_features(df, feat_config)

@@ -1,6 +1,6 @@
 data:
   source: csv
-  path: data/AIAUSDT_P_15m.csv
+  path: data/BTCUSDT_P_15m.csv
 
 features:
   enabled: true

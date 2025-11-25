@@ -8,7 +8,7 @@ from finantradealgo.core.osc_features import OscFeatureConfig, add_osc_features
 
 
 def main() -> None:
-    df = load_ohlcv_csv("data/AIAUSDT_P_15m.csv")
+    df = load_ohlcv_csv("data/BTCUSDT_P_15m.csv")
 
     # A grubu: basic
     feat_cfg = FeatureConfig()

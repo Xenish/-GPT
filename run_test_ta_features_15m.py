@@ -8,7 +8,7 @@ from finantradealgo.core.ta_features import TAFeatureConfig, add_ta_features
 
 
 def main() -> None:
-    df = load_ohlcv_csv("data/AIAUSDT_P_15m.csv")
+    df = load_ohlcv_csv("data/BTCUSDT_P_15m.csv")
 
     # 1) Mevcut basic feature’ların eklenmesi (varsa)
     feat_cfg = FeatureConfig()

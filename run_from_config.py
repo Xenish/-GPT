@@ -40,7 +40,7 @@ def build_data(cfg: Dict[str, Any]) -> pd.DataFrame:
         return load_ohlcv_csv(path)
 
     if source == "binance":
-        symbol = data_cfg.get("symbol", "AIAUSDT")
+        symbol = data_cfg.get("symbol", "BTCUSDT")
         interval = data_cfg.get("interval", "1h")
         limit = int(data_cfg.get("limit", 1000))
         bcfg = BinanceKlinesConfig(symbol=symbol, interval=interval, limit=limit)

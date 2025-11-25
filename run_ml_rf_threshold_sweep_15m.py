@@ -12,7 +12,7 @@ from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
 
 def main() -> None:
     # 1) 15 dakikalık veriyi yükle
-    df = load_ohlcv_csv("data/AIAUSDT_P_15m.csv")
+    df = load_ohlcv_csv("data/BTCUSDT_P_15m.csv")
 
     # 2) Feature'ları ekle
     feat_config = FeatureConfig()

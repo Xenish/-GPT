@@ -7,7 +7,7 @@ from finantradealgo.core.candle_features import CandleFeatureConfig, add_candles
 
 
 def main() -> None:
-    df = load_ohlcv_csv("data/AIAUSDT_P_15m.csv")
+    df = load_ohlcv_csv("data/BTCUSDT_P_15m.csv")
 
     # 1) Mevcut basic feature'lar
     feat_cfg = FeatureConfig()

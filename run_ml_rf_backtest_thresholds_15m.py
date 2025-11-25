@@ -14,7 +14,7 @@ from finantradealgo.ml.model import SklearnLongModel, SklearnModelConfig
 from finantradealgo.strategies.ml_signal import MLSignalStrategy
 
 
-def train_rf_model_15m(csv_path: str = "data/AIAUSDT_P_15m.csv"):
+def train_rf_model_15m(csv_path: str = "data/BTCUSDT_P_15m.csv"):
     """
     15 dakikalık veriden:
       - feature'ları ve label'ları üretir
@@ -77,7 +77,7 @@ def train_rf_model_15m(csv_path: str = "data/AIAUSDT_P_15m.csv"):
 def run_backtest_for_thresholds(
     thresholds: Sequence[float],
     initial_cash: float = 10_000.0,
-    csv_path: str = "data/AIAUSDT_P_15m.csv",
+    csv_path: str = "data/BTCUSDT_P_15m.csv",
     out_csv: str = "ml_rf_backtest_thresholds_15m.csv",
 ) -> None:
     """
@@ -167,7 +167,7 @@ def main() -> None:
     run_backtest_for_thresholds(
         thresholds=thresholds,
         initial_cash=10_000.0,
-        csv_path="data/AIAUSDT_P_15m.csv",
+        csv_path="data/BTCUSDT_P_15m.csv",
         out_csv="ml_rf_backtest_thresholds_15m.csv",
     )
 

@@ -18,7 +18,7 @@ class BinanceKlinesConfig:
     Basic config for Binance klines fetch.
     """
 
-    symbol: str = "AIAUSDT"
+    symbol: str = "BTCUSDT"
     interval: str = "1h"
     limit: int = 1000
     base_url: str = BINANCE_FUTURES_BASE

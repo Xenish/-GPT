@@ -84,6 +84,11 @@ ml:
 
 strategy:
   default: "rule"
+  rule: {}
+  ml: {}
+  trend_continuation: {}
+  sweep_reversal: {}
+  volatility_breakout: {}
 
 live:
   mode: "replay"
@@ -104,3 +109,23 @@ live:
     save_state_every_n_bars: 25
     state_path: "outputs/live_state/paper_state.json"
     output_dir: "outputs/live_paper"
+
+scenario:
+  presets:
+    core_15m:
+      - name: "rule_ms_on"
+        strategy_name: "rule"
+        strategy_params:
+          use_ms_trend_filter: true
+        risk_params: {}
+      - name: "trend_cont_low_risk"
+        strategy_name: "trend_continuation"
+        strategy_params: {}
+        risk_params:
+          capital_risk_pct_per_trade: 0.01
+      - name: "vol_breakout_aggr"
+        strategy_name: "volatility_breakout"
+        strategy_params:
+          min_contraction: 0.008
+        risk_params:
+          capital_risk_pct_per_trade: 0.02

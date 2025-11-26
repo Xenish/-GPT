@@ -3,13 +3,16 @@ from __future__ import annotations
 import os
 import shutil
 from dataclasses import dataclass
+from pathlib import Path
 from typing import List, Optional
+import logging
 
 import pandas as pd
 
 from .model import ModelMetadata, load_sklearn_model
 
 REGISTRY_INDEX = "registry_index.csv"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -23,6 +26,14 @@ class RegistryEntry:
     cum_return: float | None = None
     sharpe: float | None = None
     status: str = "success"
+
+
+ModelRegistryEntry = RegistryEntry
+
+
+@dataclass
+class ModelRegistry:
+    entries: List[ModelRegistryEntry]
 
 
 def _registry_index_path(base_dir: str) -> str:
@@ -116,6 +127,29 @@ def list_models(
     return entries
 
 
+def validate_registry_entry(base_dir: str, entry: ModelRegistryEntry) -> bool:
+    """
+    Check if model.joblib and meta.json exist under base_dir / entry.model_id.
+    """
+    model_dir = Path(base_dir) / entry.model_id
+    if not model_dir.is_dir():
+        return False
+    model_path = model_dir / "model.joblib"
+    meta_path = model_dir / "meta.json"
+    return model_path.is_file() and meta_path.is_file()
+
+
+def load_registry(
+    base_dir: str,
+    *,
+    symbol: Optional[str] = None,
+    timeframe: Optional[str] = None,
+    model_type: Optional[str] = None,
+) -> ModelRegistry:
+    entries = list_models(base_dir, symbol=symbol, timeframe=timeframe, model_type=model_type)
+    return ModelRegistry(entries=entries)
+
+
 def get_latest_model(
     base_dir: str,
     symbol: str,
@@ -129,10 +163,17 @@ def get_latest_model(
         model_type=model_type,
     )
     entries = [e for e in entries if e.status == "success"]
-    if not entries:
+    valid_entries: List[RegistryEntry] = []
+    for entry in entries:
+        if validate_registry_entry(base_dir, entry):
+            valid_entries.append(entry)
+        else:
+            logger.warning("Skipping registry entry %s: missing artifacts under %s", entry.model_id, base_dir)
+
+    if not valid_entries:
         return None
-    entries.sort(key=lambda e: e.created_at, reverse=True)
-    return entries[0]
+    valid_entries.sort(key=lambda e: e.created_at, reverse=True)
+    return valid_entries[0]
 
 
 def load_model_by_id(base_dir: str, model_id: str):

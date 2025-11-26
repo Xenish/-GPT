@@ -6,3 +6,6 @@ requests
 PyYAML
 xgboost
 pytest
+fastapi
+uvicorn[standard]
+pydantic>=2.0

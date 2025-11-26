@@ -1,0 +1,1 @@
+self.__REACT_LOADABLE_MANIFEST="{\"app\\\\page.tsx -> @/components/Chart\":{\"id\":\"app\\\\page.tsx -> @/components/Chart\",\"files\":[\"static/chunks/_app-pages-browser_components_Chart_tsx.js\"]}}"

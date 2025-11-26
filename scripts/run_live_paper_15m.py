@@ -63,6 +63,7 @@ def main() -> None:
         initial_cash=live_cfg.paper.initial_cash,
         output_dir=live_cfg.paper.output_dir,
         state_path=live_cfg.paper.state_path,
+        symbol=live_cfg.symbol,
     )
 
     run_id = build_run_id(live_cfg.symbol, live_cfg.timeframe)
@@ -78,6 +79,7 @@ def main() -> None:
         logger=logger,
         run_id=run_id,
         pipeline_meta=meta,
+        strategy_name=strategy_type,
     )
     engine.run_loop()
     engine.shutdown()
@@ -96,6 +98,8 @@ def main() -> None:
     print(f"Trade count   : {trade_count}")
     if log_path:
         print(f"Log file      : {log_path}")
+    print(f"Snapshot      : {engine.state_path}")
+    print(f"Latest state  : {engine.latest_state_path}")
     print(f"Equity CSV    : {outputs['equity']}")
     print(f"Trades CSV    : {outputs['trades']}")
     print(f"State JSON    : {engine.state_path}")

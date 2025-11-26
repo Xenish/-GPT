@@ -24,6 +24,7 @@ class PaperExecutionClient:
         slippage_pct: float = 0.0005,
         output_dir: str = "outputs/live_paper",
         state_path: Optional[str] = None,
+        symbol: str = "UNKNOWN",
     ):
         self.portfolio = Portfolio(
             initial_cash=initial_cash,
@@ -33,12 +34,15 @@ class PaperExecutionClient:
         self.fee_pct = fee_pct
         self.slippage_pct = slippage_pct
         self.closed_trades: List[Dict[str, Any]] = []
+        self.symbol = symbol
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self._last_price: Optional[float] = None
         self._last_timestamp: Optional[pd.Timestamp] = None
         self._active_trade: Optional[Dict[str, Any]] = None
-        self.state_path = Path(state_path) if state_path else self.output_dir / "paper_state.json"
+        self.state_path = (
+            Path(state_path) if state_path else self.output_dir / "paper_state.json"
+        )
 
     # -----------------
     # Portfolio helpers
@@ -66,6 +70,39 @@ class PaperExecutionClient:
 
     def get_trade_log(self) -> List[Dict]:
         return list(self.closed_trades)
+
+    def get_realized_pnl(self) -> float:
+        pnl_values = [t.get("pnl", 0.0) for t in self.closed_trades if t.get("pnl") is not None]
+        return float(sum(pnl_values)) if pnl_values else 0.0
+
+    def get_unrealized_pnl(self) -> float:
+        if self.portfolio.position is None or self._last_price is None:
+            return 0.0
+        position = self.portfolio.position
+        if position.side == "LONG":
+            return (self._last_price - position.entry_price) * position.qty
+        if position.side == "SHORT":
+            return (position.entry_price - self._last_price) * position.qty
+        return 0.0
+
+    def get_open_positions(self) -> List[Dict[str, Any]]:
+        if self.portfolio.position is None:
+            return []
+        pos = self.portfolio.position
+        open_trade = self._active_trade or {}
+        entry_time = open_trade.get("timestamp_entry")
+        return [
+            {
+                "id": open_trade.get("trade_id", f"{self.symbol}_{pos.side.lower()}"),
+                "symbol": self.symbol,
+                "side": pos.side,
+                "qty": pos.qty,
+                "entry_price": pos.entry_price,
+                "current_price": self._last_price,
+                "pnl": self.get_unrealized_pnl(),
+                "entry_time": entry_time.isoformat() if isinstance(entry_time, pd.Timestamp) else None,
+            }
+        ]
 
     # --------------
     # Order routing
@@ -117,8 +154,11 @@ class PaperExecutionClient:
         self.portfolio.position = Position(side=side, qty=qty, entry_price=entry_price)
         self.portfolio.update_equity(entry_price)
         self._last_price = entry_price
+        ts_entry = pd.to_datetime(timestamp)
+        trade_id = f"{self.symbol}_{side.lower()}_{int(ts_entry.timestamp())}"
         self._active_trade = {
-            "timestamp_entry": pd.to_datetime(timestamp),
+            "trade_id": trade_id,
+            "timestamp_entry": ts_entry,
             "side": side,
             "qty": qty,
             "entry_price": entry_price,
@@ -187,39 +227,23 @@ class PaperExecutionClient:
         return {"equity": equity_path, "trades": trades_path}
 
     def to_state_dict(self) -> Dict[str, Any]:
-        position_dict = None
-        if self.portfolio.position is not None:
-            position_dict = {
-                "side": self.portfolio.position.side,
-                "qty": self.portfolio.position.qty,
-                "entry_price": self.portfolio.position.entry_price,
-                "stop_loss_price": self.portfolio.position.stop_loss_price,
-                "take_profit_price": self.portfolio.position.take_profit_price,
-            }
+        open_positions = self.get_open_positions()
         return {
             "cash": self.portfolio.cash,
             "equity": self.portfolio.equity,
-            "position": position_dict,
+            "realized_pnl": self.get_realized_pnl(),
+            "unrealized_pnl": self.get_unrealized_pnl(),
+            "open_positions": open_positions,
             "open_trade": self._serialize_trade(self._active_trade),
             "closed_trades": [self._serialize_trade(t) for t in self.closed_trades],
-            "last_bar_timestamp": self._last_timestamp.isoformat() if self._last_timestamp else None,
+            "last_bar_timestamp": self._last_timestamp.isoformat()
+            if self._last_timestamp
+            else None,
         }
 
     def from_state_dict(self, state: Dict[str, Any]) -> None:
         self.portfolio.cash = state.get("cash", self.portfolio.cash)
         self.portfolio.equity = state.get("equity", self.portfolio.equity)
-
-        position_data = state.get("position")
-        if position_data:
-            self.portfolio.position = Position(
-                side=position_data["side"],
-                qty=position_data["qty"],
-                entry_price=position_data["entry_price"],
-                stop_loss_price=position_data.get("stop_loss_price"),
-                take_profit_price=position_data.get("take_profit_price"),
-            )
-        else:
-            self.portfolio.position = None
 
         open_trade = state.get("open_trade")
         self._active_trade = self._deserialize_trade(open_trade)

@@ -32,6 +32,7 @@ class LiveEngine:
         logger: Optional[logging.Logger] = None,
         run_id: Optional[str] = None,
         pipeline_meta: Optional[Dict[str, Any]] = None,
+        strategy_name: str = "unknown",
     ):
         self.config = config
         self.data_source = data_source
@@ -40,6 +41,7 @@ class LiveEngine:
         self.execution_client = execution_client
         self.logger = logger or logging.getLogger(__name__)
         self.run_id = run_id or "live_engine"
+        self.strategy_name = strategy_name
         self.pipeline_meta = pipeline_meta or {}
 
         self.price_col = "close"
@@ -51,8 +53,13 @@ class LiveEngine:
         self.blocked_entries = 0
         self.executed_trades = 0
 
-        self.state_path = Path(self.config.paper.state_path)
-        self.state_path.parent.mkdir(parents=True, exist_ok=True)
+        self.start_time: Optional[pd.Timestamp] = None
+        self.last_bar_time: Optional[pd.Timestamp] = None
+
+        live_dir = Path("outputs") / "live"
+        live_dir.mkdir(parents=True, exist_ok=True)
+        self.state_path = live_dir / f"live_state_{self.run_id}.json"
+        self.latest_state_path = live_dir / "live_state.json"
         self.save_state_every = max(int(self.config.paper.save_state_every_n_bars), 0)
 
     # ------------
@@ -75,6 +82,7 @@ class LiveEngine:
             self.pipeline_meta.get("pipeline_version", "unknown"),
         )
 
+        self.start_time = pd.Timestamp.utcnow()
         self.data_source.connect()
         last_timestamp = pd.Timestamp.utcnow()
 
@@ -102,6 +110,7 @@ class LiveEngine:
                 ts = pd.to_datetime(ts_val)
                 price = float(price)
                 last_timestamp = ts
+                self.last_bar_time = ts
                 self.execution_client.mark_to_market(price, ts)
 
                 day_key = ts.normalize()
@@ -119,7 +128,7 @@ class LiveEngine:
 
                 self.iteration += 1
                 if self.save_state_every > 0 and self.iteration % self.save_state_every == 0:
-                    self._write_state(ts)
+                    self._write_snapshot(ts)
 
         except KeyboardInterrupt:
             self.logger.info("Live loop interrupted by user.")
@@ -128,7 +137,7 @@ class LiveEngine:
             raise
         finally:
             self.data_source.close()
-            self._write_state(last_timestamp)
+            self._write_snapshot(last_timestamp)
 
         self.logger.info(
             "Live engine finished iterations=%s trades=%s blocked_entries=%s",
@@ -139,7 +148,7 @@ class LiveEngine:
 
     def shutdown(self) -> None:
         self.logger.info("Shutting down live engine run_id=%s.", self.run_id)
-        self._write_state(pd.Timestamp.utcnow())
+        self._write_snapshot(pd.Timestamp.utcnow())
 
     def export_results(self) -> Dict[str, Path]:
         return self.execution_client.export_logs(timeframe=self.config.timeframe)
@@ -249,17 +258,31 @@ class LiveEngine:
                 trade["pnl"],
             )
 
-    def _write_state(self, timestamp: pd.Timestamp) -> None:
+    def _write_snapshot(self, timestamp: pd.Timestamp) -> None:
+        exec_state = self.execution_client.to_state_dict()
+        portfolio = self.execution_client.get_portfolio()
+        day_key = timestamp.normalize() if timestamp is not None else None
         snapshot = {
             "run_id": self.run_id,
-            "timestamp": timestamp.isoformat(),
-            "mode": self.config.mode,
             "symbol": self.config.symbol,
             "timeframe": self.config.timeframe,
-            "iteration": self.iteration,
-            "stats": self.get_stats(),
-            "pipeline": self.pipeline_meta,
-            "execution_state": self.execution_client.to_state_dict(),
+            "strategy": self.strategy_name,
+            "start_time": self.start_time.isoformat() if self.start_time else None,
+            "last_bar_time": timestamp.isoformat() if timestamp is not None else None,
+            "equity": portfolio.get("equity"),
+            "realized_pnl": exec_state.get("realized_pnl"),
+            "unrealized_pnl": exec_state.get("unrealized_pnl"),
+            "daily_realized_pnl": float(
+                self.daily_realized_pnl.get(day_key, 0.0)
+            )
+            if day_key is not None
+            else None,
+            "open_positions": exec_state.get("open_positions", []),
+            "risk_stats": {
+                "blocked_entries": self.blocked_entries,
+                "executed_trades": self.executed_trades,
+            },
         }
-        with self.state_path.open("w", encoding="utf-8") as fh:
-            json.dump(snapshot, fh, ensure_ascii=False, indent=2)
+        for target in {self.state_path, self.latest_state_path}:
+            with target.open("w", encoding="utf-8") as fh:
+                json.dump(snapshot, fh, ensure_ascii=False, indent=2)

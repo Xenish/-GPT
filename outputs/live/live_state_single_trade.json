@@ -1,0 +1,17 @@
+{
+  "run_id": "single_trade",
+  "symbol": "TEST",
+  "timeframe": "15m",
+  "strategy": "unknown",
+  "start_time": "2025-11-25T23:27:43.893160+00:00",
+  "last_bar_time": "2025-11-25T23:27:43.897687+00:00",
+  "equity": 5500.0,
+  "realized_pnl": 500.0,
+  "unrealized_pnl": 0.0,
+  "daily_realized_pnl": 0.0,
+  "open_positions": [],
+  "risk_stats": {
+    "blocked_entries": 0,
+    "executed_trades": 1
+  }
+}

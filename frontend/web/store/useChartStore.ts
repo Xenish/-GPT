@@ -5,6 +5,8 @@ import {
   fetchChart,
   fetchTrades,
   runBacktest as runBacktestApi,
+  getMeta,
+  runScenarios,
 } from "@/lib/api";
 
 export type BarPoint = {
@@ -107,6 +109,25 @@ type ChartState = {
   isRunningBacktest: boolean;
   lastError: string | null;
   lastRunId?: string;
+  lastRunMetrics?: { trade_count?: number; cum_return?: number; sharpe?: number };
+  availableSymbols: string[];
+  availableTimeframes: string[];
+  availableStrategies: string[];
+  ruleParams: {
+    ms_trend_min?: number;
+    ms_trend_max?: number;
+    use_ms_chop_filter?: boolean;
+  };
+  scenarioPreset: string;
+  scenarioResults: {
+    label: string;
+    strategy: string;
+    cum_return: number | null;
+    sharpe: number | null;
+    trade_count: number | null;
+  }[];
+  isRunningScenario: boolean;
+  scenarioError: string | null;
   overlays: {
     showRuleSignals: boolean;
     showMicrostructure: boolean;
@@ -132,13 +153,16 @@ type ChartState = {
   setIsLiveLoading: (flag: boolean) => void;
   setLiveError: (msg: string | null) => void;
   setLastRunId: (id?: string) => void;
+  initMeta: () => Promise<void>;
+  setRuleParams: (partial: Partial<ChartState["ruleParams"]>) => void;
+  runScenarioPreset: (preset?: string) => Promise<void>;
   runBacktest: () => Promise<void>;
 };
 
 export const useChartStore = create<ChartState>((set, get) => ({
   symbol: "AIAUSDT",
   timeframe: "15m",
-  strategies: ["rule", "ml", "trend_continuation", "sweep_reversal", "volatility_breakout"],
+  strategies: ["rule", "ml"],
   selectedStrategy: "rule",
   backtests: [],
   selectedRunId: null,
@@ -153,6 +177,15 @@ export const useChartStore = create<ChartState>((set, get) => ({
   isRunningBacktest: false,
   lastError: null,
   lastRunId: undefined,
+  lastRunMetrics: undefined,
+  availableSymbols: [],
+  availableTimeframes: [],
+  availableStrategies: [],
+  ruleParams: {},
+  scenarioPreset: "core_15m",
+  scenarioResults: [],
+  isRunningScenario: false,
+  scenarioError: null,
   overlays: {
     showRuleSignals: true,
     showMicrostructure: false,
@@ -169,8 +202,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   setTrades: (trades) =>
     set({
       trades: [...trades].sort((a, b) => {
-        const parse = (t: string | undefined | null) =>
-          t ? new Date(t).getTime() : 0;
+        const parse = (t: string | undefined | null) => (t ? new Date(t).getTime() : 0);
         const ta = parse(a.entry_time ?? (a as any).timestamp ?? null);
         const tb = parse(b.entry_time ?? (b as any).timestamp ?? null);
         return ta - tb;
@@ -180,24 +212,72 @@ export const useChartStore = create<ChartState>((set, get) => ({
   setBars: (bars) => set({ bars }),
   setMeta: (meta) => set({ meta }),
   setSummary: (summary) => set({ summary }),
-  setOverlays: (partial) =>
-    set((state) => ({ overlays: { ...state.overlays, ...partial } })),
+  setOverlays: (partial) => set((state) => ({ overlays: { ...state.overlays, ...partial } })),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
   setLiveStatus: (liveStatus) => set({ liveStatus }),
   setIsLiveLoading: (flag) => set({ isLiveLoading: flag }),
   setLiveError: (msg) => set({ liveError: msg }),
   setLastRunId: (id) => set({ lastRunId: id }),
+  initMeta: async () => {
+    const data = await getMeta();
+    set((state) => {
+      const symbol = data.symbols.includes(state.symbol) ? state.symbol : data.symbols[0];
+      const timeframe = data.timeframes.includes(state.timeframe) ? state.timeframe : data.timeframes[0];
+      const strategy = data.strategies.includes(state.selectedStrategy)
+        ? state.selectedStrategy
+        : data.strategies[0];
+      return {
+        availableSymbols: data.symbols,
+        availableTimeframes: data.timeframes,
+        availableStrategies: data.strategies,
+        symbol,
+        timeframe,
+        strategies: data.strategies,
+        selectedStrategy: strategy,
+      };
+    });
+  },
+  setRuleParams: (partial) =>
+    set((state) => ({
+      ruleParams: { ...state.ruleParams, ...partial },
+    })),
+  runScenarioPreset: async (preset) => {
+    const { symbol, timeframe, scenarioPreset } = get();
+    const targetPreset = preset || scenarioPreset;
+    set({ isRunningScenario: true, scenarioError: null });
+    try {
+      const res = await runScenarios({
+        symbol,
+        timeframe,
+        preset_name: targetPreset,
+      });
+      set({ scenarioResults: res.rows, scenarioPreset: res.preset_name });
+    } catch (err: any) {
+      const detail = err?.response?.data?.detail ?? err?.message ?? "Scenario run failed";
+      set({ scenarioError: detail });
+    } finally {
+      set({ isRunningScenario: false });
+    }
+  },
   runBacktest: async () => {
-    const { symbol, timeframe, selectedStrategy } = get();
+    const { symbol, timeframe, selectedStrategy, ruleParams } = get();
     set({ isRunningBacktest: true, lastError: null });
     try {
       const res = await runBacktestApi({
         symbol,
         timeframe,
         strategy: selectedStrategy,
+        strategy_params: selectedStrategy === "rule" ? ruleParams : undefined,
       });
-      set({ selectedRunId: res.run_id });
+      set({
+        selectedRunId: res.run_id,
+        lastRunMetrics: {
+          trade_count: res.trade_count,
+          cum_return: res.metrics?.cum_return,
+          sharpe: res.metrics?.sharpe,
+        },
+      });
 
       const runs = await fetchBacktests(symbol, timeframe, selectedStrategy);
       set({ backtests: runs });
@@ -208,8 +288,21 @@ export const useChartStore = create<ChartState>((set, get) => ({
       const trades = await fetchTrades(res.run_id);
       set({ trades });
     } catch (err: any) {
-      const detail =
-        err?.response?.data?.detail ?? err?.message ?? "Backtest failed";
+      const detailRaw = err?.response?.data?.detail ?? err?.message ?? "Backtest failed";
+      const mapError = (msg: string) => {
+        if (!msg) return "Backtest failed";
+        if (msg.includes("No valid ML model found")) {
+          return "ML modeli bulunamadı, önce train scriptini çalıştırın.";
+        }
+        if (msg.includes("Feature mismatch")) {
+          return "Modelin feature set'i değişmiş; modeli yeniden eğitin.";
+        }
+        if (msg.includes("artifacts missing")) {
+          return "Model dosyaları eksik; registry'yi temizleyip yeniden eğitin.";
+        }
+        return msg;
+      };
+      const detail = mapError(detailRaw);
       set({ lastError: detail });
     } finally {
       set({ isRunningBacktest: false });

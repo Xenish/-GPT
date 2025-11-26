@@ -11,6 +11,8 @@ from pydantic import BaseModel
 
 from finantradealgo.features.feature_pipeline_15m import PIPELINE_VERSION_15M
 from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.backtester.scenario_engine import run_scenario_preset
+from copy import deepcopy
 
 from pydantic import BaseModel
 from finantradealgo.backtester.runners import run_backtest_once
@@ -103,6 +105,7 @@ class RunBacktestRequest(BaseModel):
     symbol: str
     timeframe: str
     strategy: str  # "rule", "ml", "trend_continuation" vs.
+    strategy_params: Optional[Dict[str, Any]] = None
 
 
 class RunBacktestResponse(BaseModel):
@@ -112,6 +115,31 @@ class RunBacktestResponse(BaseModel):
     strategy: str
     metrics: Dict[str, float]
     trade_count: int
+
+
+class MetaResponse(BaseModel):
+    symbols: List[str]
+    timeframes: List[str]
+    strategies: List[str]
+
+
+class ScenarioRunRequest(BaseModel):
+    symbol: str
+    timeframe: str
+    preset_name: str
+
+
+class ScenarioResultRow(BaseModel):
+    label: str
+    strategy: str
+    cum_return: float | None = None
+    sharpe: float | None = None
+    trade_count: int | None = None
+
+
+class ScenarioRunResponse(BaseModel):
+    preset_name: str
+    rows: List[ScenarioResultRow]
 
 
 def _find_feature_file(symbol: str, timeframe: str) -> Path:
@@ -473,6 +501,7 @@ def create_app() -> FastAPI:
                 timeframe=req.timeframe,
                 strategy_name=req.strategy,
                 cfg=cfg,
+                strategy_params=req.strategy_params,
             )
         except ValueError as e:
             # Konfig / model / pipeline mismatch gibi beklenen hatalar
@@ -493,6 +522,51 @@ def create_app() -> FastAPI:
             metrics=metrics,
             trade_count=int(result.get("trade_count", 0)),
         )
+
+    @app.get("/api/meta", response_model=MetaResponse)
+    def get_meta():
+        cfg = load_system_config()
+        symbols = cfg.get("symbols") or [cfg.get("symbol", "AIAUSDT")]
+        timeframes = cfg.get("timeframes") or [cfg.get("timeframe", "15m")]
+        strategies = cfg.get("strategy", {}).get("available") or ["rule", "ml"]
+        return MetaResponse(
+            symbols=list(symbols),
+            timeframes=list(timeframes),
+            strategies=list(strategies),
+        )
+
+    @app.post("/api/scenarios/run", response_model=ScenarioRunResponse)
+    def run_scenarios(req: ScenarioRunRequest):
+        cfg = load_system_config()
+        cfg_local = deepcopy(cfg)
+        cfg_local["symbol"] = req.symbol
+        cfg_local["timeframe"] = req.timeframe
+        try:
+            df_results = run_scenario_preset(cfg_local, req.preset_name)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail=f"Preset not found: {exc}")
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Scenario run failed: {exc}")
+
+        rows: List[ScenarioResultRow] = []
+        for _, r in df_results.iterrows():
+            rows.append(
+                ScenarioResultRow(
+                    label=str(r.get("label", r.get("scenario_name", ""))),
+                    strategy=str(r.get("strategy", r.get("strategy_name", ""))),
+                    cum_return=float(r.get("cum_return"))
+                    if pd.notna(r.get("cum_return"))
+                    else None,
+                    sharpe=float(r.get("sharpe"))
+                    if pd.notna(r.get("sharpe"))
+                    else None,
+                    trade_count=int(r.get("trade_count"))
+                    if not pd.isna(r.get("trade_count"))
+                    else None,
+                )
+            )
+
+        return ScenarioRunResponse(preset_name=req.preset_name, rows=rows)
 
 
     return app

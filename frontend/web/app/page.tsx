@@ -1,13 +1,8 @@
-"use client";
+﻿"use client";
 
 import dynamic from "next/dynamic";
 import { useEffect, useMemo } from "react";
-import {
-  fetchBacktests,
-  fetchChart,
-  fetchSummary,
-  fetchTrades,
-} from "@/lib/api";
+import { fetchBacktests, fetchChart, fetchSummary, fetchTrades } from "@/lib/api";
 import { useChartStore } from "@/store/useChartStore";
 import StrategySelector from "@/components/StrategySelector";
 import BacktestSelector from "@/components/BacktestSelector";
@@ -21,6 +16,9 @@ export default function HomePage() {
     symbol,
     timeframe,
     strategies,
+    availableSymbols,
+    availableTimeframes,
+    availableStrategies,
     selectedStrategy,
     backtests,
     selectedRunId,
@@ -48,6 +46,15 @@ export default function HomePage() {
     runBacktest,
     isRunningBacktest,
     lastError,
+    initMeta,
+    ruleParams,
+    setRuleParams,
+    lastRunMetrics,
+    scenarioPreset,
+    scenarioResults,
+    runScenarioPreset,
+    isRunningScenario,
+    scenarioError,
   } = useChartStore();
 
   const filteredRuns = useMemo(
@@ -56,6 +63,11 @@ export default function HomePage() {
   );
 
   useEffect(() => {
+    initMeta();
+  }, [initMeta]);
+
+  useEffect(() => {
+    if (!symbol || !timeframe) return;
     async function loadBacktests() {
       try {
         const runs = await fetchBacktests(symbol, timeframe);
@@ -145,7 +157,11 @@ export default function HomePage() {
             onChange={(e) => setSymbol(e.target.value)}
             className="border px-2 py-1 rounded"
           >
-            <option value="AIAUSDT">AIAUSDT</option>
+            {(availableSymbols.length ? availableSymbols : [symbol]).map((s) => (
+              <option key={s} value={s}>
+                {s}
+              </option>
+            ))}
           </select>
         </label>
 
@@ -156,12 +172,16 @@ export default function HomePage() {
             onChange={(e) => setTimeframe(e.target.value)}
             className="border px-2 py-1 rounded"
           >
-            <option value="15m">15m</option>
+            {(availableTimeframes.length ? availableTimeframes : [timeframe]).map((tf) => (
+              <option key={tf} value={tf}>
+                {tf}
+              </option>
+            ))}
           </select>
         </label>
 
         <StrategySelector
-          strategies={strategies}
+          strategies={availableStrategies.length ? availableStrategies : strategies}
           selected={selectedStrategy}
           onChange={(value) => setSelectedStrategy(value)}
         />
@@ -182,7 +202,16 @@ export default function HomePage() {
 
         {lastError && (
           <div className="text-sm text-red-600">
-            Backtest çalıştırılırken hata: {lastError}
+            Backtest Ã§alÄ±ÅŸtÄ±rÄ±lÄ±rken hata: {lastError}
+          </div>
+        )}
+
+        {lastRunMetrics && (
+          <div className="text-sm text-green-700">
+            Backtest tamamlandi - trades: {lastRunMetrics.trade_count ?? "-"} - cum_return:{" "}
+            {lastRunMetrics.cum_return !== undefined && lastRunMetrics.cum_return !== null
+              ? (lastRunMetrics.cum_return * 100).toFixed(2) + "%"
+              : "-"}
           </div>
         )}
 
@@ -227,6 +256,50 @@ export default function HomePage() {
           </label>
         </div>
 
+        {selectedStrategy === "rule" && (
+          <details className="w-full">
+            <summary className="cursor-pointer text-sm font-medium">
+              Advanced rule params
+            </summary>
+            <div className="mt-2 flex flex-wrap gap-4 text-sm">
+              <label className="flex items-center gap-2">
+                <span>ms_trend_min</span>
+                <input
+                  type="number"
+                  className="border px-2 py-1 rounded w-28"
+                  value={ruleParams.ms_trend_min ?? ""}
+                  onChange={(e) =>
+                    setRuleParams({
+                      ms_trend_min: e.target.value === "" ? undefined : Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <span>ms_trend_max</span>
+                <input
+                  type="number"
+                  className="border px-2 py-1 rounded w-28"
+                  value={ruleParams.ms_trend_max ?? ""}
+                  onChange={(e) =>
+                    setRuleParams({
+                      ms_trend_max: e.target.value === "" ? undefined : Number(e.target.value),
+                    })
+                  }
+                />
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="checkbox"
+                  checked={ruleParams.use_ms_chop_filter ?? false}
+                  onChange={(e) => setRuleParams({ use_ms_chop_filter: e.target.checked })}
+                />
+                use_ms_chop_filter
+              </label>
+            </div>
+          </details>
+        )}
+
         {loading && <span className="text-sm text-gray-600">Loading...</span>}
         {error && <span className="text-sm text-red-600">{error}</span>}
       </header>
@@ -251,6 +324,70 @@ export default function HomePage() {
               onSelect={(trade) => setSelectedTradeId(trade.trade_id)}
             />
           </section>
+
+          <section className="rounded bg-white shadow p-4">
+            <h2 className="font-semibold mb-2 text-sm uppercase tracking-wider text-gray-500">
+              Scenarios
+            </h2>
+            <div className="flex flex-wrap items-center gap-3 text-sm mb-3">
+              <label className="flex items-center gap-2">
+                <span>Preset</span>
+                <select
+                  className="border px-2 py-1 rounded"
+                  value={scenarioPreset}
+                  onChange={(e) => runScenarioPreset(e.target.value)}
+                  disabled={isRunningScenario}
+                >
+                  <option value="core_15m">core_15m</option>
+                </select>
+              </label>
+              <button
+                className="px-3 py-1 border rounded"
+                onClick={() => runScenarioPreset()}
+                disabled={isRunningScenario}
+              >
+                {isRunningScenario ? "Running..." : "Run scenarios"}
+              </button>
+              {scenarioError && <span className="text-red-600">{scenarioError}</span>}
+            </div>
+            <div className="overflow-auto">
+              <table className="min-w-full text-sm">
+                <thead>
+                  <tr className="text-left border-b">
+                    <th className="pr-4">Label</th>
+                    <th className="pr-4">Strategy</th>
+                    <th className="pr-4">Cum Return</th>
+                    <th className="pr-4">Sharpe</th>
+                    <th className="pr-4">Trades</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {scenarioResults.map((row) => (
+                    <tr key={row.label + row.strategy} className="border-b last:border-0">
+                      <td className="pr-4 py-1">{row.label}</td>
+                      <td className="pr-4">{row.strategy}</td>
+                      <td className="pr-4">
+                        {row.cum_return !== null && row.cum_return !== undefined
+                          ? (row.cum_return * 100).toFixed(2) + "%"
+                          : "-"}
+                      </td>
+                      <td className="pr-4">
+                        {row.sharpe !== null && row.sharpe !== undefined ? row.sharpe.toFixed(2) : "-"}
+                      </td>
+                      <td className="pr-4">{row.trade_count ?? "-"}</td>
+                    </tr>
+                  ))}
+                  {scenarioResults.length === 0 && (
+                    <tr>
+                      <td className="py-2 text-gray-500" colSpan={5}>
+                        No scenario results yet.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </section>
         </div>
 
         <div className="flex flex-col gap-4">
@@ -264,7 +401,7 @@ export default function HomePage() {
                 <strong>
                   {summary?.final_equity
                     ? summary.final_equity.toFixed(2)
-                    : "—"}
+                    : "-"}
                 </strong>
               </li>
               <li>
@@ -273,18 +410,18 @@ export default function HomePage() {
                   {summary?.cum_return !== undefined &&
                   summary?.cum_return !== null
                     ? (summary.cum_return * 100).toFixed(2) + "%"
-                    : "—"}
+                    : "-"}
                 </strong>
               </li>
               <li>
-                Trades: <strong>{summary?.trade_count ?? "—"}</strong>
+                Trades: <strong>{summary?.trade_count ?? "-"}</strong>
               </li>
               <li>
                 Win rate:{" "}
                 <strong>
                   {summary?.win_rate !== undefined && summary?.win_rate !== null
                     ? (summary.win_rate * 100).toFixed(1) + "%"
-                    : "—"}
+                    : "-"}
                 </strong>
               </li>
               <li>Selected run: {selectedRunId ?? "None"}</li>
@@ -297,14 +434,14 @@ export default function HomePage() {
             </h2>
             {meta ? (
               <ul className="text-sm space-y-1">
-                <li>Pipeline: {meta.pipeline_version ?? "—"}</li>
-                <li>Preset: {meta.features_preset ?? "—"}</li>
-                <li>Run ID: {meta.run_id ?? "—"}</li>
+                <li>Pipeline: {meta.pipeline_version ?? "-"}</li>
+                <li>Preset: {meta.features_preset ?? "-"}</li>
+                <li>Run ID: {meta.run_id ?? "-"}</li>
                 <li>
                   Updated:{" "}
                   {meta.last_updated
                     ? new Date(meta.last_updated).toLocaleString()
-                    : "—"}
+                    : "-"}
                 </li>
               </ul>
             ) : (
@@ -318,3 +455,4 @@ export default function HomePage() {
     </main>
   );
 }
+

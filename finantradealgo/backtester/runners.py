@@ -101,11 +101,15 @@ def run_backtest_once(
     timeframe: str,
     strategy_name: str,
     cfg: Optional[Dict[str, Any]] = None,
+    strategy_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     cfg = cfg or load_system_config()
     cfg_local = deepcopy(cfg)
     cfg_local["symbol"] = symbol
     cfg_local["timeframe"] = timeframe
+    if strategy_params:
+        strategy_cfg = cfg_local.setdefault("strategy", {}).setdefault(strategy_name, {})
+        strategy_cfg.update(strategy_params)
 
     df_features, pipeline_meta = build_feature_pipeline_from_system_config(cfg_local)
 

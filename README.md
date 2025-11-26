@@ -38,3 +38,17 @@ run_from_config.py: YAML-driven runner (data load, features/labels, optional mod
 Data:
 
 data/ holds fetched CSVs (15m OHLCV, funding, OI).
+
+## Sprint 2 additions
+
+- API
+  - `GET /api/meta` returns symbols/timeframes/strategies from `config/system.yml`.
+  - `POST /api/backtests/run` accepts optional `strategy_params` to override config (e.g., rule filters).
+  - `POST /api/scenarios/run` executes a scenario preset from config and returns summary rows.
+- ML registry tooling
+  - `scripts/run_list_models.py [--only-valid] [--only-symbol SYMBOL]` to inspect registry entries and artifacts.
+  - `scripts/run_clean_registry.py [--prune-dirs]` to drop broken registry rows (and optionally delete missing dirs).
+- Frontend
+  - Dropdowns are populated via `/api/meta`.
+  - Rule strategy has an “Advanced params” panel (ms_trend_min/max, use_ms_chop_filter) passed as `strategy_params`.
+  - Backtest button shows inline success/error feedback; scenario panel can run presets and show a simple result table.

@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
+from copy import deepcopy
 
 import pandas as pd
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
+from finantradealgo.features.feature_pipeline_15m import build_feature_pipeline_from_system_config
 from finantradealgo.strategies.strategy_engine import create_strategy
 
 
@@ -89,4 +91,38 @@ class ScenarioEngine:
         return pd.DataFrame.from_records(records)
 
 
-__all__ = ["ScenarioConfig", "ScenarioEngine"]
+def load_scenarios_from_config(cfg: Dict[str, Any], preset_name: str) -> List[ScenarioConfig]:
+    scenario_section = cfg.get("scenario", {}) or {}
+    presets = scenario_section.get("presets", {}) or {}
+    entries = presets.get(preset_name)
+    if not entries:
+        raise KeyError(preset_name)
+    scenarios: list[ScenarioConfig] = []
+    for entry in entries:
+        scenarios.append(
+            ScenarioConfig(
+                name=entry["name"],
+                strategy_name=entry["strategy_name"],
+                strategy_params=entry.get("strategy_params"),
+                risk_params=entry.get("risk_params"),
+                feature_preset=entry.get("feature_preset"),
+                train_mode=entry.get("train_mode"),
+            )
+        )
+    return scenarios
+
+
+def run_scenario_preset(cfg: Dict[str, Any], preset_name: str) -> pd.DataFrame:
+    cfg_local = deepcopy(cfg)
+    scenarios = load_scenarios_from_config(cfg_local, preset_name)
+    df_features, _ = build_feature_pipeline_from_system_config(cfg_local)
+    engine = ScenarioEngine(cfg_local)
+    df_result = engine.run_scenarios(scenarios, df_features)
+    if "scenario_name" in df_result.columns:
+        df_result["label"] = df_result["scenario_name"]
+    if "strategy_name" in df_result.columns:
+        df_result["strategy"] = df_result["strategy_name"]
+    return df_result
+
+
+__all__ = ["ScenarioConfig", "ScenarioEngine", "run_scenario_preset", "load_scenarios_from_config"]

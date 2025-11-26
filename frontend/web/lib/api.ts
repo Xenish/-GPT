@@ -67,6 +67,7 @@ export async function runBacktest(
     symbol: string;
     timeframe: string;
     strategy: string;
+    strategy_params?: Record<string, any>;
   }
 ): Promise<{
   run_id: string;
@@ -85,4 +86,31 @@ export async function runBacktest(
     metrics: Record<string, number>;
     trade_count: number;
   };
+}
+
+export async function getMeta(): Promise<{
+  symbols: string[];
+  timeframes: string[];
+  strategies: string[];
+}> {
+  const res = await axios.get(`${API_BASE}/api/meta`);
+  return res.data;
+}
+
+export async function runScenarios(body: {
+  symbol: string;
+  timeframe: string;
+  preset_name: string;
+}): Promise<{
+  preset_name: string;
+  rows: {
+    label: string;
+    strategy: string;
+    cum_return: number | null;
+    sharpe: number | null;
+    trade_count: number | null;
+  }[];
+}> {
+  const res = await axios.post(`${API_BASE}/api/scenarios/run`, body);
+  return res.data;
 }

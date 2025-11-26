@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-import json
+from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Optional, Tuple
-from copy import deepcopy
+from typing import Any, Dict, Optional
 
 import pandas as pd
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
 from finantradealgo.features.feature_pipeline_15m import (
+    PIPELINE_VERSION_15M,
     build_feature_pipeline_from_system_config,
 )
+from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.strategy_engine import create_strategy
 from finantradealgo.system.config_loader import load_system_config
-from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
 
 
 def _generate_run_id(strategy: str, symbol: str, timeframe: str) -> str:
@@ -62,9 +62,7 @@ def _inject_ml_proba_from_registry(
     model, meta = load_model_by_id(str(model_dir), entry.model_id)
     feature_cols = getattr(meta, "feature_cols", None)
     if not feature_cols:
-        raise ValueError(
-            f"Model metadata missing feature_cols for {entry.model_id}"
-        )
+        raise ValueError(f"Model metadata missing feature_cols for {entry.model_id}")
 
     missing = [c for c in feature_cols if c not in df_features.columns]
     if missing:
@@ -72,12 +70,11 @@ def _inject_ml_proba_from_registry(
             f"Missing features for ML model {entry.model_id}: {missing}"
         )
 
+    df_features = df_features.copy()
     X = df_features[feature_cols].to_numpy()
     proba = model.predict_proba(X)
     if proba.shape[1] < 2:
         raise ValueError("Loaded model does not provide binary probabilities.")
-
-    df_features = df_features.copy()
     df_features[proba_col] = proba[:, 1].astype(float)
     return df_features
 
@@ -96,7 +93,8 @@ def run_backtest_once(
     df_features, pipeline_meta = build_feature_pipeline_from_system_config(cfg_local)
 
     strategy_key = strategy_name.lower()
-    if strategy_key == "ml":
+    ml_aliases = {"ml", "ml_strategy", "mlsignal", "ml_signal", "mlsignalstrategy"}
+    if strategy_key in ml_aliases:
         df_features = _inject_ml_proba_from_registry(
             df_features=df_features,
             cfg=cfg_local,

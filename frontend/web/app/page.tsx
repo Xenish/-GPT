@@ -7,7 +7,6 @@ import {
   fetchChart,
   fetchSummary,
   fetchTrades,
-  runBacktest,
 } from "@/lib/api";
 import { useChartStore } from "@/store/useChartStore";
 import StrategySelector from "@/components/StrategySelector";
@@ -46,9 +45,9 @@ export default function HomePage() {
     setOverlays,
     setLoading,
     setError,
-    isRunning,
-    setIsRunning,
-    setLastRunId,
+    runBacktest,
+    isRunningBacktest,
+    lastError,
   } = useChartStore();
 
   const filteredRuns = useMemo(
@@ -134,22 +133,6 @@ export default function HomePage() {
     loadTrades();
   }, [selectedRunId, setTrades]);
 
-  async function handleRunBacktest() {
-    try {
-      setIsRunning(true);
-      const res = await runBacktest(symbol, timeframe, selectedStrategy);
-      setLastRunId(res.run_id);
-      const runs = await fetchBacktests(symbol, timeframe);
-      setBacktests(runs);
-      setSelectedRunId(res.run_id);
-    } catch (err) {
-      console.error(err);
-      window.alert("Backtest çalıştırılırken hata oluştu.");
-    } finally {
-      setIsRunning(false);
-    }
-  }
-
   return (
     <main className="min-h-screen px-6 py-4 flex flex-col gap-4 bg-slate-50">
       <header className="flex items-center gap-4 flex-wrap">
@@ -190,12 +173,18 @@ export default function HomePage() {
         />
 
         <button
-          onClick={handleRunBacktest}
-          disabled={isRunning}
+          onClick={runBacktest}
+          disabled={isRunningBacktest}
           className="px-3 py-1 border rounded text-sm"
         >
-          {isRunning ? "Running..." : "Run backtest"}
+          {isRunningBacktest ? "Running..." : "Run backtest"}
         </button>
+
+        {lastError && (
+          <div className="text-sm text-red-600">
+            Backtest çalıştırılırken hata: {lastError}
+          </div>
+        )}
 
         <div className="flex items-center gap-3 text-sm">
           <label className="flex items-center gap-1">

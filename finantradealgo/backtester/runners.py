@@ -56,19 +56,31 @@ def _inject_ml_proba_from_registry(
     )
     if entry is None:
         raise ValueError(
-            f"No ML model found in registry for {symbol}/{timeframe}. "
+            f"No valid ML model found in registry for {symbol}/{timeframe}. "
             "Train or register a model before running ML backtests."
         )
 
-    model, meta = load_model_by_id(str(model_dir), entry.model_id)
+    try:
+        model, meta = load_model_by_id(str(model_dir), entry.model_id)
+    except FileNotFoundError as exc:
+        raise ValueError(
+            f"ML model artifacts missing for {entry.model_id} under {model_dir}. "
+            "Run the appropriate ML training script again or clean the registry."
+        ) from exc
+
     feature_cols = getattr(meta, "feature_cols", None)
     if not feature_cols:
-        raise ValueError(f"Model metadata missing feature_cols for {entry.model_id}")
+        raise ValueError(
+            f"Model {entry.model_id} has no feature_cols metadata. "
+            "Retrain the model with a newer pipeline that stores feature_cols."
+        )
 
     missing = [c for c in feature_cols if c not in df_features.columns]
     if missing:
         raise ValueError(
-            f"Missing features for ML model {entry.model_id}: {missing}"
+            f"Feature mismatch for model {entry.model_id}. "
+            f"Missing columns in df_features: {missing}. "
+            "Likely the feature pipeline or config changed after training."
         )
 
     df_features = df_features.copy()
@@ -77,6 +89,10 @@ def _inject_ml_proba_from_registry(
     if proba.shape[1] < 2:
         raise ValueError("Loaded model does not provide binary probabilities.")
     df_features[proba_col] = proba[:, 1].astype(float)
+    if df_features[proba_col].isna().all():
+        raise ValueError(
+            f"Model {entry.model_id} produced only NaN probabilities for {symbol}/{timeframe}."
+        )
     return df_features
 
 

@@ -466,11 +466,13 @@ def create_app() -> FastAPI:
         """
         Frontend'teki 'Run backtest' butonu buraya POST atıyor.
         """
+        cfg = load_system_config()
         try:
             result = run_backtest_once(
                 symbol=req.symbol,
                 timeframe=req.timeframe,
                 strategy_name=req.strategy,
+                cfg=cfg,
             )
         except ValueError as e:
             # Konfig / model / pipeline mismatch gibi beklenen hatalar
@@ -481,13 +483,15 @@ def create_app() -> FastAPI:
             traceback.print_exc()
             raise HTTPException(status_code=500, detail=f"Backtest failed: {e}")
 
+        metrics = {k: float(v) for k, v in result.get("metrics", {}).items()}
+
         return RunBacktestResponse(
             run_id=result["run_id"],
             symbol=req.symbol,
             timeframe=req.timeframe,
             strategy=req.strategy,
-            metrics=result.get("metrics", {}),
-            trade_count=result.get("trade_count", 0),
+            metrics=metrics,
+            trade_count=int(result.get("trade_count", 0)),
         )
 
 

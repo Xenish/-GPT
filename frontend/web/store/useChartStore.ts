@@ -1,5 +1,12 @@
 import { create } from "zustand";
 
+import {
+  fetchBacktests,
+  fetchChart,
+  fetchTrades,
+  runBacktest as runBacktestApi,
+} from "@/lib/api";
+
 export type BarPoint = {
   time: number;
   open: number;
@@ -97,7 +104,8 @@ type ChartState = {
   liveStatus: LiveStatus | null;
   isLiveLoading: boolean;
   liveError: string | null;
-  isRunning: boolean;
+  isRunningBacktest: boolean;
+  lastError: string | null;
   lastRunId?: string;
   overlays: {
     showRuleSignals: boolean;
@@ -123,11 +131,11 @@ type ChartState = {
   setLiveStatus: (status: LiveStatus | null) => void;
   setIsLiveLoading: (flag: boolean) => void;
   setLiveError: (msg: string | null) => void;
-  setIsRunning: (flag: boolean) => void;
   setLastRunId: (id?: string) => void;
+  runBacktest: () => Promise<void>;
 };
 
-export const useChartStore = create<ChartState>((set) => ({
+export const useChartStore = create<ChartState>((set, get) => ({
   symbol: "AIAUSDT",
   timeframe: "15m",
   strategies: ["rule", "ml", "trend_continuation", "sweep_reversal", "volatility_breakout"],
@@ -142,7 +150,8 @@ export const useChartStore = create<ChartState>((set) => ({
   liveStatus: null,
   isLiveLoading: false,
   liveError: null,
-  isRunning: false,
+  isRunningBacktest: false,
+  lastError: null,
   lastRunId: undefined,
   overlays: {
     showRuleSignals: true,
@@ -178,6 +187,32 @@ export const useChartStore = create<ChartState>((set) => ({
   setLiveStatus: (liveStatus) => set({ liveStatus }),
   setIsLiveLoading: (flag) => set({ isLiveLoading: flag }),
   setLiveError: (msg) => set({ liveError: msg }),
-  setIsRunning: (flag) => set({ isRunning: flag }),
   setLastRunId: (id) => set({ lastRunId: id }),
+  runBacktest: async () => {
+    const { symbol, timeframe, selectedStrategy } = get();
+    set({ isRunningBacktest: true, lastError: null });
+    try {
+      const res = await runBacktestApi({
+        symbol,
+        timeframe,
+        strategy: selectedStrategy,
+      });
+      set({ selectedRunId: res.run_id });
+
+      const runs = await fetchBacktests(symbol, timeframe, selectedStrategy);
+      set({ backtests: runs });
+
+      const { bars, meta } = await fetchChart(symbol, timeframe, res.run_id);
+      set({ bars, meta });
+
+      const trades = await fetchTrades(res.run_id);
+      set({ trades });
+    } catch (err: any) {
+      const detail =
+        err?.response?.data?.detail ?? err?.message ?? "Backtest failed";
+      set({ lastError: detail });
+    } finally {
+      set({ isRunningBacktest: false });
+    }
+  },
 }));

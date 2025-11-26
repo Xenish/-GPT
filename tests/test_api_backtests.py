@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+from copy import deepcopy
+
+import pytest
 from fastapi.testclient import TestClient
 
 from finantradealgo.api.server import create_app
+from finantradealgo.system.config_loader import load_system_config
 
 
-client = TestClient(create_app())
+@pytest.fixture
+def client():
+    return TestClient(create_app())
 
 
-def test_backtests_listing_and_trades():
+def test_backtests_listing_and_trades(client: TestClient):
     resp = client.get("/api/backtests/AIAUSDT/15m")
     assert resp.status_code == 200
     runs = resp.json()
@@ -25,12 +31,12 @@ def test_backtests_listing_and_trades():
     assert isinstance(trades, list)
 
 
-def test_trades_not_found_returns_404():
+def test_trades_not_found_returns_404(client: TestClient):
     resp = client.get("/api/trades/nonexistent_run")
     assert resp.status_code == 404
 
 
-def test_run_backtest_endpoint():
+def test_run_backtest_rule_ok(client: TestClient):
     resp = client.post(
         "/api/backtests/run",
         json={"symbol": "AIAUSDT", "timeframe": "15m", "strategy": "rule"},
@@ -40,3 +46,27 @@ def test_run_backtest_endpoint():
     assert "run_id" in payload
     assert payload["strategy"] == "rule"
     assert payload["symbol"] == "AIAUSDT"
+    assert isinstance(payload.get("metrics", {}), dict)
+    assert payload.get("trade_count") is not None
+
+
+def test_run_backtest_ml_without_model(monkeypatch, tmp_path):
+    cfg = deepcopy(load_system_config())
+    ml_cfg = cfg.get("ml", {})
+    ml_cfg.setdefault("persistence", {})
+    ml_cfg["persistence"]["model_dir"] = str(tmp_path / "models_empty")
+    cfg["ml"] = ml_cfg
+
+    def _fake_load():
+        return cfg
+
+    monkeypatch.setattr("finantradealgo.api.server.load_system_config", _fake_load)
+    app = create_app()
+    client = TestClient(app)
+
+    resp = client.post(
+        "/api/backtests/run",
+        json={"symbol": "AIAUSDT", "timeframe": "15m", "strategy": "ml"},
+    )
+    assert resp.status_code == 400
+    assert "No valid ML model found" in resp.json()["detail"]

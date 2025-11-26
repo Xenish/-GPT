@@ -15,6 +15,7 @@ from finantradealgo.features.feature_pipeline_15m import (
 from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.strategy_engine import create_strategy
+from finantradealgo.strategies.ml_strategy import MLSignalStrategy
 from finantradealgo.system.config_loader import load_system_config
 
 
@@ -92,17 +93,15 @@ def run_backtest_once(
 
     df_features, pipeline_meta = build_feature_pipeline_from_system_config(cfg_local)
 
-    strategy_key = strategy_name.lower()
-    ml_aliases = {"ml", "ml_strategy", "mlsignal", "ml_signal", "mlsignalstrategy"}
-    if strategy_key in ml_aliases:
+    strategy = create_strategy(strategy_name, cfg_local)
+
+    if isinstance(strategy, MLSignalStrategy):
         df_features = _inject_ml_proba_from_registry(
             df_features=df_features,
             cfg=cfg_local,
             symbol=symbol,
             timeframe=timeframe,
         )
-
-    strategy = create_strategy(strategy_name, cfg_local)
 
     risk_cfg = RiskConfig.from_dict(cfg_local.get("risk", {}))
     risk_engine = RiskEngine(risk_cfg)

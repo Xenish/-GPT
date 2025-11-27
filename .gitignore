@@ -5,3 +5,7 @@ __pycache__/
 .env
 venv/
 .DS_Store
+
+
+temiz_proje.zip
+*.zip   # istersen tüm zipleri de ignore edebilirsin

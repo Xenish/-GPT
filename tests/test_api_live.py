@@ -1,8 +1,11 @@
 from __future__ import annotations
 
 from pathlib import Path
+import os
 
 from fastapi.testclient import TestClient
+
+os.environ.setdefault("FCM_SERVER_KEY", "dummy")
 
 from finantradealgo.api.server import create_app
 
@@ -18,6 +21,7 @@ def write_snapshot(run_id: str, filename: str) -> None:
         "symbol": "AIAUSDT",
         "timeframe": "15m",
         "strategy": "rule",
+        "mode": "paper",
         "start_time": "2025-11-25T00:00:00Z",
         "last_bar_time": "2025-11-25T01:00:00Z",
         "last_bar_time_ts": 1769350800.0,
@@ -25,11 +29,14 @@ def write_snapshot(run_id: str, filename: str) -> None:
         "realized_pnl": 100.0,
         "unrealized_pnl": 10.0,
         "daily_realized_pnl": 50.0,
+        "daily_unrealized_pnl": 5.0,
         "open_positions": [],
         "risk_stats": {"blocked_entries": 0},
         "data_source": "binance_ws",
         "stale_data_seconds": 2.5,
         "ws_reconnect_count": 1,
+        "last_orders": [],
+        "timestamp": 1769350800.0,
     }
     target = LIVE_DIR / filename
     target.write_text(__import__("json").dumps(payload), encoding="utf-8")
@@ -47,6 +54,8 @@ def test_live_status_default_snapshot(tmp_path):
     assert data["stale_data_seconds"] == 2.5
     assert data["ws_reconnect_count"] == 1
     assert data["last_bar_time_ts"] == 1769350800.0
+    assert data["daily_unrealized_pnl"] == 5.0
+    assert data["mode"] == "paper"
 
 
 def test_live_status_specific_run():

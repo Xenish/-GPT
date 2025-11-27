@@ -4,6 +4,8 @@ import json
 import logging
 import time
 from collections import defaultdict
+import datetime as dt
+import os
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 
@@ -15,6 +17,7 @@ from finantradealgo.execution.client_base import ExecutionClientBase
 from finantradealgo.risk.risk_engine import RiskEngine
 from finantradealgo.system.config_loader import LiveConfig
 from finantradealgo.core.portfolio import Position
+from finantradealgo.system.kill_switch import KillSwitch, KillSwitchReason
 
 
 class LiveEngine:
@@ -36,6 +39,8 @@ class LiveEngine:
         logger: Optional[logging.Logger] = None,
         pipeline_meta: Optional[Dict[str, Any]] = None,
         strategy_name: str = "unknown",
+        kill_switch: Optional[KillSwitch] = None,
+        notifier: Optional["NotificationManager"] = None,
     ):
         live_cfg = system_cfg.get("live_cfg")
         if not isinstance(live_cfg, LiveConfig):
@@ -54,6 +59,9 @@ class LiveEngine:
         self.run_id = run_id or "live_engine"
         self.strategy_name = strategy_name
         self.pipeline_meta = pipeline_meta or {}
+        self.kill_switch = kill_switch
+        self.notifier = notifier
+        self.status: str = "RUNNING"
         self.is_running: bool = True
         self.is_paused: bool = False
         self.requested_action: Optional[str] = None  # "pause", "resume", "stop", "flatten"
@@ -130,7 +138,23 @@ class LiveEngine:
                     if not self._handle_no_bar():
                         break
                     continue
-                last_timestamp = self._on_bar(bar)
+                try:
+                    last_timestamp = self._on_bar(bar)
+                except Exception:
+                    self.logger.exception("Error while processing bar.")
+                    if self.kill_switch:
+                        self.kill_switch.register_exception(dt.datetime.utcnow())
+                        self._evaluate_kill_switch(
+                            equity=float(
+                                self.execution_client.get_portfolio().get("equity", 0.0)
+                            ),
+                            day_key=self._last_bar_timestamp.normalize()
+                            if self._last_bar_timestamp
+                            else None,
+                            timestamp=self._last_bar_timestamp or pd.Timestamp.utcnow(),
+                            reason_source="exception",
+                        )
+                    continue
         except KeyboardInterrupt:
             self.logger.info("Live loop interrupted by user.")
         except Exception:
@@ -237,9 +261,11 @@ class LiveEngine:
 
         day_key = ts.normalize()
         portfolio_snapshot = self.execution_client.get_portfolio() or {}
-        equity = float(portfolio_snapshot.get("equity", 0.0))
+        equity = float(portfolio_snapshot.get("equity", 0.0) or 0.0)
         if day_key not in self.equity_start_of_day:
             self.equity_start_of_day[day_key] = equity
+        if self._evaluate_kill_switch(equity, day_key, ts):
+            return ts
 
         positions = self._refresh_positions()
 
@@ -623,6 +649,72 @@ class LiveEngine:
             total += abs(qty) * entry_price
         return total
 
+    def _update_heartbeat(self, ts: pd.Timestamp) -> None:
+        try:
+            payload = {
+                "run_id": self.run_id,
+                "status": self.status,
+                "last_bar_time": ts.isoformat() if ts is not None else None,
+                "updated_at": dt.datetime.now(dt.timezone.utc).isoformat(),
+            }
+            tmp_path = self.heartbeat_path.with_suffix(".tmp")
+            tmp_path.parent.mkdir(parents=True, exist_ok=True)
+            with tmp_path.open("w", encoding="utf-8") as fh:
+                json.dump(payload, fh)
+            os.replace(tmp_path, self.heartbeat_path)
+        except Exception:
+            self.logger.exception("Failed to update heartbeat file.")
+
+    def _evaluate_kill_switch(
+        self,
+        equity: float,
+        day_key: Optional[pd.Timestamp],
+        timestamp: pd.Timestamp,
+        reason_source: Optional[str] = None,
+    ) -> bool:
+        if not self.kill_switch:
+            return False
+        realized = float(self.daily_realized_pnl.get(day_key, 0.0) if day_key is not None else 0.0)
+        ks_state = self.kill_switch.evaluate(
+            dt.datetime.utcnow(),
+            equity=equity,
+            daily_realized_pnl=realized,
+        )
+        if not ks_state.is_triggered:
+            return False
+        if self.status != "STOPPED_BY_KILL_SWITCH":
+            self.status = "STOPPED_BY_KILL_SWITCH"
+            self.logger.error(
+                "Kill switch triggered reason=%s source=%s",
+                ks_state.reason.value,
+                reason_source or "evaluation",
+            )
+            self._notify_kill_switch(ks_state, equity, realized)
+            try:
+                self.flatten_all()
+            except Exception:
+                self.logger.exception("Failed to flatten positions during kill switch.")
+            self.stop()
+            self._write_snapshot(timestamp)
+        return True
+
+    def _notify_kill_switch(
+        self,
+        ks_state: KillSwitchState,
+        equity: float,
+        daily_realized: float,
+    ) -> None:
+        if not self.notifier:
+            return
+        msg = (
+            f"Kill-switch triggered! reason={ks_state.reason.value} "
+            f"equity={equity:.2f} daily_pnl={daily_realized:.2f} run_id={self.run_id}"
+        )
+        try:
+            self.notifier.critical(msg)
+        except Exception:
+            self.logger.exception("Failed to send kill-switch notification.")
+
     def _write_snapshot(self, timestamp: pd.Timestamp) -> None:
         exec_state = self.execution_client.to_state_dict()
         portfolio = self.execution_client.get_portfolio()
@@ -630,11 +722,22 @@ class LiveEngine:
         day_key = last_ts.normalize() if last_ts is not None else None
         last_bar_iso = last_ts.isoformat() if last_ts is not None else None
         last_bar_ts = float(last_ts.timestamp()) if last_ts is not None else None
+        open_positions = exec_state.get("open_positions", [])
+        daily_unrealized = None
+        if open_positions:
+            try:
+                daily_unrealized = float(
+                    sum(float(pos.get("pnl", 0.0) or 0.0) for pos in open_positions)
+                )
+            except (TypeError, ValueError):
+                daily_unrealized = None
         snapshot = {
             "run_id": self.run_id,
             "symbol": self.config.symbol,
             "timeframe": self.config.timeframe,
             "strategy": self.strategy_name,
+            "mode": getattr(self.config, "mode", "replay"),
+            "status": self.status,
             "start_time": self.start_time.isoformat() if self.start_time else None,
             "last_bar_time": last_bar_iso,
             "last_bar_time_ts": last_bar_ts,
@@ -646,7 +749,8 @@ class LiveEngine:
             )
             if day_key is not None
             else None,
-            "open_positions": exec_state.get("open_positions", []),
+            "daily_unrealized_pnl": daily_unrealized,
+            "open_positions": open_positions,
             "risk_stats": {
                 "blocked_entries": self.blocked_entries,
                 "executed_trades": self.executed_trades,
@@ -655,7 +759,19 @@ class LiveEngine:
             "data_source": self.data_source_name,
             "stale_data_seconds": self.stale_data_seconds,
             "ws_reconnect_count": self.ws_reconnect_count,
+            "last_orders": exec_state.get("recent_orders", []),
+            "timestamp": time.time(),
         }
+        if self.kill_switch:
+            ks_state = self.kill_switch.state
+            snapshot["kill_switch"] = {
+                "is_triggered": ks_state.is_triggered,
+                "reason": ks_state.reason.value if isinstance(ks_state.reason, KillSwitchReason) else str(ks_state.reason),
+                "trigger_time": ks_state.trigger_time.isoformat() if ks_state.trigger_time else None,
+                "peak_equity": ks_state.peak_equity,
+            }
+        else:
+            snapshot["kill_switch"] = None
         for target in {self.state_path, self.latest_state_path}:
             with target.open("w", encoding="utf-8") as fh:
                 json.dump(snapshot, fh, ensure_ascii=False, indent=2)

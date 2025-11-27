@@ -136,14 +136,18 @@ def test_live_status_and_control(client):
         "symbol": "AIAUSDT",
         "timeframe": "15m",
         "strategy": "rule",
+        "mode": "paper",
         "equity": 1000,
         "realized_pnl": 0,
         "unrealized_pnl": 0,
         "daily_realized_pnl": 0,
+        "daily_unrealized_pnl": 0,
         "open_positions": [],
+        "last_orders": [],
         "data_source": "replay",
         "stale_data_seconds": None,
         "ws_reconnect_count": 0,
+        "timestamp": 0.0,
     }
     state_path.write_text(json.dumps(snapshot), encoding="utf-8")
 

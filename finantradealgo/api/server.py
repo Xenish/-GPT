@@ -97,15 +97,19 @@ class LiveStatus(BaseModel):
     start_time: Optional[str] = None
     last_bar_time: Optional[str] = None
     last_bar_time_ts: Optional[float] = None
+    mode: Optional[str] = None
     equity: float
     realized_pnl: float | None = None
     unrealized_pnl: float | None = None
     daily_realized_pnl: float | None = None
+    daily_unrealized_pnl: float | None = None
     open_positions: List[LivePosition] = []
     risk_stats: Dict[str, Any] = {}
     data_source: Optional[str] = None
     stale_data_seconds: Optional[float] = None
     ws_reconnect_count: Optional[int] = None
+    last_orders: List[Dict[str, Any]] = []
+    timestamp: Optional[float] = None
 
 class RunBacktestRequest(BaseModel):
     symbol: str

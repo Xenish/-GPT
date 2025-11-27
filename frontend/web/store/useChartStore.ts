@@ -91,15 +91,19 @@ export type LiveStatus = {
   start_time?: string | null;
   last_bar_time?: string | null;
   last_bar_time_ts?: number | null;
+  mode?: string | null;
   equity: number;
   realized_pnl?: number | null;
   unrealized_pnl?: number | null;
   daily_realized_pnl?: number | null;
+  daily_unrealized_pnl?: number | null;
   open_positions: LivePosition[];
   risk_stats: Record<string, any>;
   data_source?: string | null;
   stale_data_seconds?: number | null;
   ws_reconnect_count?: number | null;
+  last_orders?: Record<string, any>[];
+  timestamp?: number | null;
 };
 
 type ChartState = {

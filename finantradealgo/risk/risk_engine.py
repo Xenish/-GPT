@@ -125,11 +125,22 @@ class RiskEngine:
         equity_start_of_day: float,
         realized_pnl_today: float,
         row: Optional[pd.Series] = None,
+        *,
+        open_positions: Optional[List[Dict[str, Any]]] = None,
+        max_open_trades: Optional[int] = None,
     ) -> bool:
         if equity_start_of_day <= 0:
             return False
 
         if is_daily_loss_limit_hit(equity_start_of_day, realized_pnl_today, self._daily_limit_cfg):
+            return False
+
+        if (
+            max_open_trades is not None
+            and max_open_trades > 0
+            and open_positions is not None
+            and len(open_positions) >= max_open_trades
+        ):
             return False
 
         self._tail_risk_active = False

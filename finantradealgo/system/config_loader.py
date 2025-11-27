@@ -7,6 +7,16 @@ from typing import Any, Dict, Optional, List
 import os
 import yaml
 
+def resolve_env_placeholders(value: Optional[str]) -> Optional[str]:
+    if not isinstance(value, str):
+        return value
+    if value.startswith("${") and value.endswith("}"):
+        env_var = value[2:-1]
+        actual = os.getenv(env_var)
+        if not actual:
+            raise RuntimeError(f"Env var {env_var} not set for sensitive config.")
+        return actual
+    return value
 
 @dataclass
 class ReplayConfig:
@@ -151,6 +161,97 @@ class LiveConfig:
 
 
 @dataclass
+class KillSwitchConfig:
+    enabled: bool = True
+    daily_realized_pnl_limit: float = -20.0
+    max_equity_drawdown_pct: float = 30.0
+    max_exceptions_per_hour: int = 5
+    min_equity: float = 0.0
+    evaluation_interval_bars: int = 1
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "KillSwitchConfig":
+        data = data or {}
+        return cls(
+            enabled=bool(data.get("enabled", cls.enabled)),
+            daily_realized_pnl_limit=float(
+                data.get("daily_realized_pnl_limit", cls.daily_realized_pnl_limit)
+            ),
+            max_equity_drawdown_pct=float(
+                data.get("max_equity_drawdown_pct", cls.max_equity_drawdown_pct)
+            ),
+            max_exceptions_per_hour=int(
+                data.get("max_exceptions_per_hour", cls.max_exceptions_per_hour)
+            ),
+            min_equity=float(data.get("min_equity", cls.min_equity)),
+            evaluation_interval_bars=int(
+                data.get("evaluation_interval_bars", cls.evaluation_interval_bars)
+            ),
+        )
+
+
+@dataclass
+class ExchangeRiskConfig:
+    max_leverage: int = 3
+    max_position_notional: float = 0.0
+    max_position_contracts: float = 0.0
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ExchangeRiskConfig":
+        data = data or {}
+        return cls(
+            max_leverage=int(data.get("max_leverage", cls.max_leverage)),
+            max_position_notional=float(
+                data.get("max_position_notional", cls.max_position_notional)
+            ),
+            max_position_contracts=float(
+                data.get("max_position_contracts", cls.max_position_contracts)
+            ),
+        )
+
+
+@dataclass
+class FCMConfig:
+    enabled: bool = False
+    server_key: str = ""
+    topic: str = "finantrade"
+    min_level: str = "info"
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "FCMConfig":
+        data = data or {}
+        server_key_raw = data.get("server_key", "")
+        server_key = ""
+        if data.get("enabled"):
+            if server_key_raw:
+                if not str(server_key_raw).startswith("${"):
+                    raise RuntimeError("FCM server_key must use ${ENV_VAR} placeholder.")
+                server_key = resolve_env_placeholders(server_key_raw)
+            else:
+                raise RuntimeError("FCM server_key must be provided via env placeholder.")
+        return cls(
+            enabled=bool(data.get("enabled", cls.enabled)),
+            server_key=server_key or "",
+            topic=data.get("topic", cls.topic),
+            min_level=str(data.get("min_level", cls.min_level)).lower(),
+        )
+
+
+@dataclass
+class NotificationsConfig:
+    enabled: bool = False
+    fcm: FCMConfig = field(default_factory=FCMConfig)
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "NotificationsConfig":
+        data = data or {}
+        return cls(
+            enabled=bool(data.get("enabled", cls.enabled)),
+            fcm=FCMConfig.from_dict(data.get("fcm")),
+        )
+
+
+@dataclass
 class PortfolioConfig:
     symbols: List[str]
     timeframe: str
@@ -190,19 +291,24 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
     "exchange": {
         "name": "binance_futures",
         "testnet": True,
+        "dry_run": True,
         "base_url_rest": "https://fapi.binance.com",
         "base_url_rest_testnet": "https://testnet.binancefuture.com",
         "base_url_ws": "wss://fstream.binance.com",
         "base_url_ws_testnet": "wss://stream.binancefuture.com",
         "api_key_env": "BINANCE_FUTURES_API_KEY",
         "secret_key_env": "BINANCE_FUTURES_API_SECRET",
+        "api_key": "${BINANCE_FUTURES_API_KEY}",
+        "secret_key": "${BINANCE_FUTURES_API_SECRET}",
         "recv_window_ms": 5000,
         "time_sync": True,
         "max_time_skew_ms": 1000,
         "symbol_mapping": {},
         "default_leverage": 5,
         "position_mode": "one_way",
-        "dry_run": True,
+        "max_leverage": 3,
+        "max_position_notional": 0.0,
+        "max_position_contracts": 0.0,
     },
     "data": {
         "ohlcv_dir": "data/ohlcv",
@@ -350,6 +456,23 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
             "max_ws_reconnects": 10,
         },
     },
+    "kill_switch": {
+        "enabled": True,
+        "daily_realized_pnl_limit": -20.0,
+        "max_equity_drawdown_pct": 30.0,
+        "max_exceptions_per_hour": 5,
+        "min_equity": 0.0,
+        "evaluation_interval_bars": 1,
+    },
+    "notifications": {
+        "enabled": False,
+        "fcm": {
+            "enabled": False,
+            "server_key": "${FCM_SERVER_KEY}",
+            "topic": "finantrade",
+            "min_level": "info",
+        },
+    },
 }
 
 
@@ -375,6 +498,16 @@ class ExchangeConfig:
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ExchangeConfig":
         data = data or {}
         mapping = data.get("symbol_mapping", {}) or {}
+        raw_api_key = data.get("api_key", "${BINANCE_FUTURES_API_KEY}")
+        raw_secret_key = data.get("secret_key", "${BINANCE_FUTURES_API_SECRET}")
+        if raw_api_key and not str(raw_api_key).startswith("${"):
+            raise RuntimeError(
+                "API key must not be stored directly in system.yml. Use ${ENV_VAR} placeholder."
+            )
+        if raw_secret_key and not str(raw_secret_key).startswith("${"):
+            raise RuntimeError(
+                "API secret must not be stored directly in system.yml. Use ${ENV_VAR} placeholder."
+            )
         return cls(
             name=data.get("name", cls.name),
             testnet=bool(data.get("testnet", cls.testnet)),
@@ -431,17 +564,28 @@ def load_system_config(path: str = "config/system.yml") -> Dict[str, Any]:
     merged = _deep_merge(DEFAULT_SYSTEM_CONFIG, user_cfg)
     merged["portfolio_cfg"] = PortfolioConfig.from_dict(merged.get("portfolio", {}))
     merged["exchange_cfg"] = ExchangeConfig.from_dict(merged.get("exchange", {}))
+    merged["exchange_risk_cfg"] = ExchangeRiskConfig.from_dict(merged.get("exchange", {}))
+    merged["kill_switch_cfg"] = KillSwitchConfig.from_dict(merged.get("kill_switch", {}))
     merged["live_cfg"] = LiveConfig.from_dict(
         merged.get("live"),
         default_symbol=merged.get("symbol"),
         default_timeframe=merged.get("timeframe"),
     )
+    merged["notifications_cfg"] = NotificationsConfig.from_dict(merged.get("notifications", {}))
     return merged
 
 
 def load_exchange_credentials(cfg: ExchangeConfig) -> tuple[str, str]:
-    api_key = os.getenv(cfg.api_key_env, "").strip()
-    secret_key = os.getenv(cfg.secret_key_env, "").strip()
+    raw_api = getattr(cfg, "api_key", None)
+    raw_secret = getattr(cfg, "secret_key", None)
+    if raw_api:
+        api_key = resolve_env_placeholders(raw_api).strip()
+    else:
+        api_key = os.getenv(cfg.api_key_env, "").strip()
+    if raw_secret:
+        secret_key = resolve_env_placeholders(raw_secret).strip()
+    else:
+        secret_key = os.getenv(cfg.secret_key_env, "").strip()
     if not api_key or not secret_key:
         raise RuntimeError(
             f"Exchange API keys not found in environment variables "
@@ -457,5 +601,9 @@ __all__ = [
     "PaperConfig",
     "PortfolioConfig",
     "ExchangeConfig",
+    "ExchangeRiskConfig",
+    "KillSwitchConfig",
+    "NotificationsConfig",
+    "FCMConfig",
     "load_exchange_credentials",
 ]

@@ -9,3 +9,30 @@ venv/
 
 temiz_proje.zip
 *.zip   # istersen tüm zipleri de ignore edebilirsin
+
+# Next.js build output
+.next/
+out/
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+dist/
+build/
+
+# Node / Next.js
+node_modules/
+.next/
+out/
+
+# Env / secrets
+.env
+.env.local
+.env.*.local
+
+# OS / Editor çöpü
+.DS_Store
+.vscode/
+.idea/

@@ -107,6 +107,13 @@ python scripts/run_live_ws_debug.py --symbol BTCUSDT --symbol ETHUSDT --count 5
 ```
 Script, gelen agregasyon barlarını stdout'a yazar; CTRL+C ile çıkabilirsiniz.
 
+### Live exchange run (testnet/dry-run)
+Exchange modunu denemek için:
+```bash
+python scripts/run_live_exchange_15m.py
+```
+`config/system.yml` içindeki `exchange.testnet=true` ve `exchange.dry_run=true` olduğundan emin olun. Testnet dışına çıkmadan önce minimum notional / düşük kaldıraçla deneyin ve `dry_run` bayrağını kaldırmadan önce gerçek API key'lerinizi kontrol edin.
+
 ## Kısaltılmış Dosya Ağacı
 ```
 config/

@@ -3,13 +3,16 @@
   "symbol": "BTCUSDT",
   "timeframe": "15m",
   "strategy": "unknown",
+  "mode": "replay",
+  "status": "RUNNING",
   "start_time": null,
-  "last_bar_time": "2025-11-27T14:23:24.748597+00:00",
-  "last_bar_time_ts": 1764253404.748597,
+  "last_bar_time": "2025-11-27T16:42:29.590486+00:00",
+  "last_bar_time_ts": 1764261749.590486,
   "equity": 1000,
   "realized_pnl": 0.0,
   "unrealized_pnl": 0.0,
   "daily_realized_pnl": 0.0,
+  "daily_unrealized_pnl": null,
   "open_positions": [],
   "risk_stats": {
     "blocked_entries": 0,
@@ -18,5 +21,8 @@
   "requested_action": null,
   "data_source": "replay",
   "stale_data_seconds": null,
-  "ws_reconnect_count": 0
+  "ws_reconnect_count": 0,
+  "last_orders": [],
+  "timestamp": 1764261749.590551,
+  "kill_switch": null
 }

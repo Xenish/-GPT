@@ -4,12 +4,15 @@ timeframe: "15m"
 exchange:
   name: "binance_futures"
   testnet: true
+  dry_run: true
   base_url_rest: "https://fapi.binance.com"
   base_url_rest_testnet: "https://testnet.binancefuture.com"
   base_url_ws: "wss://fstream.binance.com"
   base_url_ws_testnet: "wss://stream.binancefuture.com"
   api_key_env: "BINANCE_FUTURES_API_KEY"
   secret_key_env: "BINANCE_FUTURES_API_SECRET"
+  api_key: "${BINANCE_FUTURES_API_KEY}"
+  secret_key: "${BINANCE_FUTURES_API_SECRET}"
   recv_window_ms: 5000
   time_sync: true
   max_time_skew_ms: 1000
@@ -18,7 +21,9 @@ exchange:
     BTCUSDT: "BTCUSDT"
   default_leverage: 5
   position_mode: "one_way"
-  dry_run: true
+  max_leverage: 3
+  max_position_notional: 200.0
+  max_position_contracts: 0.05
 
 data:
   ohlcv_dir: "data/ohlcv"
@@ -154,6 +159,22 @@ live:
     resync_lookback_bars: 200
     max_stale_seconds: 30
     max_ws_reconnects: 10
+
+kill_switch:
+  enabled: true
+  daily_realized_pnl_limit: -20.0
+  max_equity_drawdown_pct: 30.0
+  max_exceptions_per_hour: 5
+  min_equity: 100.0
+  evaluation_interval_bars: 1
+
+notifications:
+  enabled: true
+  fcm:
+    enabled: true
+    server_key: "${FCM_SERVER_KEY}"
+    topic: "finantrade"
+    min_level: "info"
 
 scenario:
   presets:

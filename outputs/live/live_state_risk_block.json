@@ -1,22 +1,28 @@
 {
   "run_id": "risk_block",
-  "symbol": "TEST",
-  "timeframe": "15m",
+  "symbol": "TESTUSDT",
+  "timeframe": "1m",
   "strategy": "unknown",
-  "start_time": "2025-11-27T14:23:24.695533+00:00",
-  "last_bar_time": "2025-11-27T14:23:24.745874+00:00",
-  "last_bar_time_ts": 1764253404.745874,
-  "equity": 4750.0,
-  "realized_pnl": -250.0,
-  "unrealized_pnl": 0.0,
+  "mode": "exchange",
+  "status": "RUNNING",
+  "start_time": "2025-11-27T16:42:29.675225+00:00",
+  "last_bar_time": "2025-01-01T00:01:00+00:00",
+  "last_bar_time_ts": 1735689660.0,
+  "equity": 1000.0,
+  "realized_pnl": null,
+  "unrealized_pnl": null,
   "daily_realized_pnl": 0.0,
+  "daily_unrealized_pnl": null,
   "open_positions": [],
   "risk_stats": {
-    "blocked_entries": 4,
-    "executed_trades": 1
+    "blocked_entries": 1,
+    "executed_trades": 0
   },
   "requested_action": null,
   "data_source": "replay",
-  "stale_data_seconds": 28559304.73695755,
-  "ws_reconnect_count": 0
+  "stale_data_seconds": 28572089.68409872,
+  "ws_reconnect_count": 0,
+  "last_orders": [],
+  "timestamp": 1764261749.6843827,
+  "kill_switch": null
 }

@@ -7,6 +7,8 @@ import {
   runBacktest as runBacktestApi,
   getMeta,
   runScenarios,
+  getPortfolioBacktests,
+  getPortfolioEquity,
 } from "@/lib/api";
 
 export type BarPoint = {
@@ -95,6 +97,7 @@ type ChartState = {
   symbol: string;
   timeframe: string;
   strategies: string[];
+  scenarioPresets: string[];
   selectedStrategy: string;
   backtests: BacktestRunInfo[];
   selectedRunId: string | null;
@@ -128,6 +131,18 @@ type ChartState = {
   }[];
   isRunningScenario: boolean;
   scenarioError: string | null;
+  portfolioRuns: {
+    run_id: string;
+    symbols: string[];
+    timeframe: string;
+    start?: string | null;
+    end?: string | null;
+    metrics: Record<string, number | null>;
+  }[];
+  selectedPortfolioRunId: string | null;
+  portfolioEquity: { time: number; portfolio_equity: number }[];
+  isLoadingPortfolioEquity: boolean;
+  portfolioError: string | null;
   overlays: {
     showRuleSignals: boolean;
     showMicrostructure: boolean;
@@ -156,6 +171,8 @@ type ChartState = {
   initMeta: () => Promise<void>;
   setRuleParams: (partial: Partial<ChartState["ruleParams"]>) => void;
   runScenarioPreset: (preset?: string) => Promise<void>;
+  fetchPortfolioRuns: () => Promise<void>;
+  fetchPortfolioEquity: (runId: string) => Promise<void>;
   runBacktest: () => Promise<void>;
 };
 
@@ -163,6 +180,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   symbol: "AIAUSDT",
   timeframe: "15m",
   strategies: ["rule", "ml"],
+  scenarioPresets: [],
   selectedStrategy: "rule",
   backtests: [],
   selectedRunId: null,
@@ -186,6 +204,11 @@ export const useChartStore = create<ChartState>((set, get) => ({
   scenarioResults: [],
   isRunningScenario: false,
   scenarioError: null,
+  portfolioRuns: [],
+  selectedPortfolioRunId: null,
+  portfolioEquity: [],
+  isLoadingPortfolioEquity: false,
+  portfolioError: null,
   overlays: {
     showRuleSignals: true,
     showMicrostructure: false,
@@ -227,14 +250,20 @@ export const useChartStore = create<ChartState>((set, get) => ({
       const strategy = data.strategies.includes(state.selectedStrategy)
         ? state.selectedStrategy
         : data.strategies[0];
+      const scenarioPreset =
+        data.scenario_presets && data.scenario_presets.length > 0
+          ? data.scenario_presets[0]
+          : state.scenarioPreset;
       return {
         availableSymbols: data.symbols,
         availableTimeframes: data.timeframes,
         availableStrategies: data.strategies,
+        scenarioPresets: data.scenario_presets,
         symbol,
         timeframe,
         strategies: data.strategies,
         selectedStrategy: strategy,
+        scenarioPreset,
       };
     });
   },
@@ -258,6 +287,25 @@ export const useChartStore = create<ChartState>((set, get) => ({
       set({ scenarioError: detail });
     } finally {
       set({ isRunningScenario: false });
+    }
+  },
+  fetchPortfolioRuns: async () => {
+    const runs = await getPortfolioBacktests();
+    set((state) => ({
+      portfolioRuns: runs,
+      selectedPortfolioRunId: state.selectedPortfolioRunId ?? (runs[0]?.run_id ?? null),
+    }));
+  },
+  fetchPortfolioEquity: async (runId: string) => {
+    set({ isLoadingPortfolioEquity: true, portfolioError: null });
+    try {
+      const points = await getPortfolioEquity(runId);
+      set({ portfolioEquity: points, selectedPortfolioRunId: runId });
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail ?? err?.message ?? "Failed to load portfolio equity";
+      set({ portfolioError: msg });
+    } finally {
+      set({ isLoadingPortfolioEquity: false });
     }
   },
   runBacktest: async () => {

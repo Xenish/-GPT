@@ -1,7 +1,7 @@
 ﻿"use client";
 
 import dynamic from "next/dynamic";
-import { useEffect, useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { fetchBacktests, fetchChart, fetchSummary, fetchTrades } from "@/lib/api";
 import { useChartStore } from "@/store/useChartStore";
 import StrategySelector from "@/components/StrategySelector";
@@ -50,13 +50,22 @@ export default function HomePage() {
     ruleParams,
     setRuleParams,
     lastRunMetrics,
+    scenarioPresets,
     scenarioPreset,
     scenarioResults,
     runScenarioPreset,
     isRunningScenario,
     scenarioError,
+    portfolioRuns,
+    selectedPortfolioRunId,
+    portfolioEquity,
+    isLoadingPortfolioEquity,
+    portfolioError,
+    fetchPortfolioRuns,
+    fetchPortfolioEquity,
   } = useChartStore();
 
+  const [activeTab, setActiveTab] = useState<"single" | "portfolio">("single");
   const filteredRuns = useMemo(
     () => backtests.filter((run) => run.strategy === selectedStrategy),
     [backtests, selectedStrategy]
@@ -208,7 +217,7 @@ export default function HomePage() {
 
         {lastRunMetrics && (
           <div className="text-sm text-green-700">
-            Backtest tamamlandi - trades: {lastRunMetrics.trade_count ?? "-"} - cum_return:{" "}
+            Backtest tamamlandı · trades: {lastRunMetrics.trade_count ?? "-"} - cum_return:{" "}
             {lastRunMetrics.cum_return !== undefined && lastRunMetrics.cum_return !== null
               ? (lastRunMetrics.cum_return * 100).toFixed(2) + "%"
               : "-"}

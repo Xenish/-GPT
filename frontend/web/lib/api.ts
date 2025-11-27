@@ -92,6 +92,7 @@ export async function getMeta(): Promise<{
   symbols: string[];
   timeframes: string[];
   strategies: string[];
+  scenario_presets: string[];
 }> {
   const res = await axios.get(`${API_BASE}/api/meta`);
   return res.data;
@@ -112,5 +113,26 @@ export async function runScenarios(body: {
   }[];
 }> {
   const res = await axios.post(`${API_BASE}/api/scenarios/run`, body);
+  return res.data;
+}
+
+export async function getPortfolioBacktests(): Promise<
+  {
+    run_id: string;
+    symbols: string[];
+    timeframe: string;
+    start?: string;
+    end?: string;
+    metrics: Record<string, number | null>;
+  }[]
+> {
+  const res = await axios.get(`${API_BASE}/api/portfolio/backtests`);
+  return res.data;
+}
+
+export async function getPortfolioEquity(
+  runId: string
+): Promise<{ time: number; portfolio_equity: number }[]> {
+  const res = await axios.get(`${API_BASE}/api/portfolio/equity/${runId}`);
   return res.data;
 }

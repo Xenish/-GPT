@@ -13,6 +13,8 @@ from finantradealgo.features.feature_pipeline_15m import PIPELINE_VERSION_15M
 from finantradealgo.system.config_loader import load_system_config
 from finantradealgo.backtester.scenario_engine import run_scenario_preset
 from copy import deepcopy
+from finantradealgo.backtester.portfolio_engine import PortfolioBacktestEngine
+from finantradealgo.system.config_loader import PortfolioConfig
 
 from pydantic import BaseModel
 from finantradealgo.backtester.runners import run_backtest_once
@@ -121,6 +123,7 @@ class MetaResponse(BaseModel):
     symbols: List[str]
     timeframes: List[str]
     strategies: List[str]
+    scenario_presets: List[str] = []
 
 
 class ScenarioRunRequest(BaseModel):
@@ -140,6 +143,20 @@ class ScenarioResultRow(BaseModel):
 class ScenarioRunResponse(BaseModel):
     preset_name: str
     rows: List[ScenarioResultRow]
+
+
+class PortfolioBacktestInfo(BaseModel):
+    run_id: str
+    symbols: List[str]
+    timeframe: str
+    start: Optional[str]
+    end: Optional[str]
+    metrics: Dict[str, Optional[float]]
+
+
+class PortfolioEquityPoint(BaseModel):
+    time: float
+    portfolio_equity: float
 
 
 def _find_feature_file(symbol: str, timeframe: str) -> Path:
@@ -529,10 +546,12 @@ def create_app() -> FastAPI:
         symbols = cfg.get("symbols") or [cfg.get("symbol", "AIAUSDT")]
         timeframes = cfg.get("timeframes") or [cfg.get("timeframe", "15m")]
         strategies = cfg.get("strategy", {}).get("available") or ["rule", "ml"]
+        scenario_presets = list((cfg.get("scenario", {}) or {}).get("presets", {}).keys())
         return MetaResponse(
             symbols=list(symbols),
             timeframes=list(timeframes),
             strategies=list(strategies),
+            scenario_presets=scenario_presets,
         )
 
     @app.post("/api/scenarios/run", response_model=ScenarioRunResponse)
@@ -568,5 +587,83 @@ def create_app() -> FastAPI:
 
         return ScenarioRunResponse(preset_name=req.preset_name, rows=rows)
 
+    def _compute_basic_metrics(equity: pd.Series) -> Dict[str, Optional[float]]:
+        if equity.empty:
+            return {}
+        returns = equity.pct_change().dropna()
+        start = float(equity.iloc[0])
+        final = float(equity.iloc[-1])
+        cum_return = final / start - 1 if start else None
+        max_equity = equity.cummax()
+        dd = (equity - max_equity) / max_equity
+        max_drawdown = float(dd.min()) if not dd.empty else None
+        sharpe = float(returns.mean() / returns.std() * (252 ** 0.5)) if not returns.empty and returns.std() != 0 else 0.0
+        return {
+            "final_equity": final,
+            "cum_return": cum_return,
+            "max_drawdown": max_drawdown,
+            "sharpe": sharpe,
+        }
+
+    def _parse_run_id(stem: str) -> str:
+        return stem.replace("_equity", "")
+
+    @app.get("/api/portfolio/backtests", response_model=List[PortfolioBacktestInfo])
+    def list_portfolio_backtests():
+        bt_dir = Path("outputs") / "backtests"
+        if not bt_dir.exists():
+            return []
+        infos: List[PortfolioBacktestInfo] = []
+        for path in bt_dir.glob("portfolio_*_equity.csv"):
+            run_id = path.stem
+            try:
+                df = pd.read_csv(path, parse_dates=["time"])
+            except Exception:
+                continue
+            if df.empty or "portfolio_equity" not in df.columns:
+                continue
+            equity = pd.Series(df["portfolio_equity"].values, index=df["time"])
+            metrics = _compute_basic_metrics(equity)
+            timeframe = run_id.split("_")[1] if len(run_id.split("_")) > 1 else ""
+            symbols: List[str] = []
+            trades_path = Path("outputs") / "trades" / f"{run_id}_trades.csv"
+            if trades_path.exists():
+                try:
+                    trades_df = pd.read_csv(trades_path)
+                    if "symbol" in trades_df.columns:
+                        symbols = sorted(trades_df["symbol"].dropna().unique().tolist())
+                except Exception:
+                    symbols = []
+            infos.append(
+                PortfolioBacktestInfo(
+                    run_id=run_id,
+                    symbols=symbols,
+                    timeframe=timeframe,
+                    start=df["time"].iloc[0].isoformat() if not df.empty else None,
+                    end=df["time"].iloc[-1].isoformat() if not df.empty else None,
+                    metrics=metrics,
+                )
+            )
+        return infos
+
+    @app.get("/api/portfolio/equity/{run_id}", response_model=List[PortfolioEquityPoint])
+    def get_portfolio_equity(run_id: str):
+        bt_dir = Path("outputs") / "backtests"
+        path = bt_dir / f"{run_id}.csv"
+        if not path.is_file():
+            raise HTTPException(status_code=404, detail="Run not found")
+        df = pd.read_csv(path, parse_dates=["time"])
+        if df.empty or "portfolio_equity" not in df.columns:
+            return []
+        points: List[PortfolioEquityPoint] = []
+        for _, row in df.iterrows():
+            t = pd.to_datetime(row["time"]).timestamp()
+            points.append(
+                PortfolioEquityPoint(
+                    time=t,
+                    portfolio_equity=float(row["portfolio_equity"]),
+                )
+            )
+        return points
 
     return app

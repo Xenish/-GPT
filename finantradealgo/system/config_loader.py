@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import yaml
 
@@ -86,6 +86,40 @@ class LiveConfig:
             log_level=str(data.get("log_level", cls.log_level)).upper(),
             replay=replay_cfg,
             paper=paper_cfg,
+        )
+
+
+@dataclass
+class PortfolioConfig:
+    symbols: List[str]
+    timeframe: str
+    strategy: str
+    initial_capital: float
+    allocation_type: str
+    weights: Dict[str, float]
+
+    @classmethod
+    def from_dict(cls, d: Dict[str, Any]) -> "PortfolioConfig":
+        symbols = d.get("symbols", [])
+        timeframe = d.get("timeframe", "15m")
+        strategy = d.get("strategy", "rule")
+        initial_capital = float(d.get("initial_capital", 1000.0))
+
+        alloc = d.get("capital_allocation", {}) or {}
+        alloc_type = alloc.get("type", "equal_weight")
+        weights = alloc.get("weights", {}) or {}
+
+        if alloc_type == "equal_weight" and symbols:
+            w = 1.0 / len(symbols)
+            weights = {s: w for s in symbols}
+
+        return cls(
+            symbols=symbols,
+            timeframe=timeframe,
+            strategy=strategy,
+            initial_capital=initial_capital,
+            allocation_type=alloc_type,
+            weights=weights,
         )
 
 
@@ -185,6 +219,16 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
     "strategy": {
         "default": "rule",
     },
+    "portfolio": {
+        "symbols": [],
+        "timeframe": "15m",
+        "strategy": "rule",
+        "initial_capital": 1000.0,
+        "capital_allocation": {
+            "type": "equal_weight",
+            "weights": {},
+        },
+    },
     "live": {
         "mode": "replay",
         "exchange": "binance_futures",
@@ -237,7 +281,8 @@ def load_system_config(path: str = "config/system.yml") -> Dict[str, Any]:
         user_cfg = yaml.safe_load(f) or {}
 
     merged = _deep_merge(DEFAULT_SYSTEM_CONFIG, user_cfg)
+    merged["portfolio_cfg"] = PortfolioConfig.from_dict(merged.get("portfolio", {}))
     return merged
 
 
-__all__ = ["load_system_config", "LiveConfig", "ReplayConfig", "PaperConfig"]
+__all__ = ["load_system_config", "LiveConfig", "ReplayConfig", "PaperConfig", "PortfolioConfig"]

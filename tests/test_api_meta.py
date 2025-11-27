@@ -15,6 +15,7 @@ def test_meta_endpoint():
     assert isinstance(data["symbols"], list)
     assert isinstance(data["timeframes"], list)
     assert isinstance(data["strategies"], list)
+    assert isinstance(data.get("scenario_presets", []), list)
     assert len(data["symbols"]) > 0
     assert len(data["timeframes"]) > 0
     assert len(data["strategies"]) > 0

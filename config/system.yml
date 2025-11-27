@@ -129,3 +129,14 @@ scenario:
           min_contraction: 0.008
         risk_params:
           capital_risk_pct_per_trade: 0.02
+
+portfolio:
+  symbols:
+    - AIAUSDT
+    - BTCUSDT
+  timeframe: "15m"
+  strategy: "rule"
+  initial_capital: 1000.0
+  capital_allocation:
+    type: "equal_weight"
+    weights: {}

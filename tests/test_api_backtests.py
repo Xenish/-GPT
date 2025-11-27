@@ -70,3 +70,41 @@ def test_run_backtest_ml_without_model(monkeypatch, tmp_path):
     )
     assert resp.status_code == 400
     assert "No valid ML model found" in resp.json()["detail"]
+
+
+def test_run_backtest_rule_with_override(monkeypatch):
+    calls = []
+
+    def _fake_run_backtest_once(symbol, timeframe, strategy_name, cfg=None, strategy_params=None):
+        calls.append(strategy_params)
+        trade_count = 1
+        if strategy_params and strategy_params.get("ms_trend_min") == 1.5:
+            trade_count = 5
+        return {
+            "run_id": "mock_run",
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "strategy": strategy_name,
+            "metrics": {"cum_return": 0.1},
+            "trade_count": trade_count,
+        }
+
+    monkeypatch.setattr("finantradealgo.api.server.run_backtest_once", _fake_run_backtest_once)
+    client = TestClient(create_app())
+
+    resp_default = client.post(
+        "/api/backtests/run",
+        json={"symbol": "AIAUSDT", "timeframe": "15m", "strategy": "rule"},
+    )
+    resp_override = client.post(
+        "/api/backtests/run",
+        json={
+            "symbol": "AIAUSDT",
+            "timeframe": "15m",
+            "strategy": "rule",
+            "strategy_params": {"ms_trend_min": 1.5},
+        },
+    )
+    assert resp_default.status_code == 200
+    assert resp_override.status_code == 200
+    assert resp_default.json()["trade_count"] != resp_override.json()["trade_count"]

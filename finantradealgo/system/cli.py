@@ -6,9 +6,9 @@ import click
 
 from finantradealgo.backtester.runners import run_backtest_once
 from finantradealgo.system.config_loader import load_system_config
-from scripts.run_build_features_15m import main as build_features_main
-from scripts.run_live_paper_15m import main as live_paper_main
-from scripts.run_ml_train_15m import main as ml_train_main
+from scripts.run_build_features import main as build_features_main
+from scripts.run_live_paper import main as live_paper_main
+from scripts.run_ml_train import main as ml_train_main
 
 
 def _override_symbol_tf(

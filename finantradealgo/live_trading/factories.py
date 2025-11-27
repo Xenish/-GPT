@@ -9,7 +9,7 @@ from finantradealgo.core.strategy import BaseStrategy
 from finantradealgo.data_engine.live_data_source import AbstractLiveDataSource, FileReplayDataSource
 from finantradealgo.data_engine.binance_ws_source import BinanceWsDataSource
 from finantradealgo.execution.execution_client import create_execution_client
-from finantradealgo.features.feature_pipeline_15m import build_feature_pipeline_from_system_config
+from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
 from finantradealgo.live_trading.live_engine import LiveEngine
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig

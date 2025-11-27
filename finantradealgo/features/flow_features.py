@@ -24,10 +24,12 @@ def add_flow_features(
     )
 
     rename_map = {}
-    if "perp_premium" in merged.columns:
-        rename_map["perp_premium"] = "flow_perp_premium"
-    if "basis" in merged.columns:
-        rename_map["basis"] = "flow_basis"
+    for col in df_flow.columns:
+        if col == "timestamp":
+            continue
+        if col.startswith("flow_"):
+            continue
+        rename_map[col] = f"flow_{col}"
     merged = merged.rename(columns=rename_map)
 
     if "flow_perp_premium" in merged.columns and zscore_window > 0:

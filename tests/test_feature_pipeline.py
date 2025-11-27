@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import pandas as pd
 
-from finantradealgo.features.feature_pipeline_15m import (
-    PIPELINE_VERSION_15M,
+from finantradealgo.features.feature_pipeline import (
+    PIPELINE_VERSION,
     FeaturePipelineConfig,
-    build_feature_pipeline_15m,
-    get_feature_cols_15m,
+    build_feature_pipeline,
+    get_feature_cols,
 )
 
 
@@ -37,7 +37,7 @@ def test_pipeline_metadata_round_trip(tmp_path):
         drop_na=False,
         feature_preset="extended",
     )
-    df_feat, meta = build_feature_pipeline_15m(str(csv_path), cfg)
-    assert meta["pipeline_version"] == PIPELINE_VERSION_15M
-    expected_cols = get_feature_cols_15m(df_feat, preset=cfg.feature_preset)
+    df_feat, meta = build_feature_pipeline(str(csv_path), cfg)
+    assert meta["pipeline_version"] == PIPELINE_VERSION
+    expected_cols = get_feature_cols(df_feat, preset=cfg.feature_preset)
     assert meta["feature_cols"] == expected_cols

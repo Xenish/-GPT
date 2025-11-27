@@ -14,10 +14,11 @@ import pandas as pd
 from finantradealgo.core.strategy import BaseStrategy, StrategyContext
 from finantradealgo.data_engine.live_data_source import AbstractLiveDataSource, Bar
 from finantradealgo.execution.client_base import ExecutionClientBase
+from finantradealgo.execution.execution_client import ExchangeRiskLimitError
 from finantradealgo.risk.risk_engine import RiskEngine
 from finantradealgo.system.config_loader import LiveConfig
 from finantradealgo.core.portfolio import Position
-from finantradealgo.system.kill_switch import KillSwitch, KillSwitchReason
+from finantradealgo.system.kill_switch import KillSwitch, KillSwitchReason, KillSwitchState
 
 
 class LiveEngine:
@@ -61,6 +62,24 @@ class LiveEngine:
         self.pipeline_meta = pipeline_meta or {}
         self.kill_switch = kill_switch
         self.notifier = notifier
+        self._kill_switch_eval_interval = (
+            max(
+                1,
+                int(
+                    getattr(
+                        getattr(self.kill_switch, "cfg", None),
+                        "evaluation_interval_bars",
+                        1,
+                    )
+                ),
+            )
+            if self.kill_switch
+            else None
+        )
+        self._kill_switch_last_eval_iter: int = -1
+        self.kill_switch_triggered_flag: bool = False
+        self.kill_switch_triggered_reason: Optional[str] = None
+        self.kill_switch_triggered_ts: Optional[pd.Timestamp] = None
         self.status: str = "RUNNING"
         self.is_running: bool = True
         self.is_paused: bool = False
@@ -98,6 +117,12 @@ class LiveEngine:
             Path(latest_state_override) if latest_state_override else live_dir / "live_state.json"
         )
         self.save_state_every = max(int(self.config.paper.save_state_every_n_bars), 0)
+        heartbeat_template = getattr(self.config, "heartbeat_path", None) or "outputs/live/heartbeat_{run_id}.json"
+        try:
+            heartbeat_value = heartbeat_template.format(run_id=self.run_id)
+        except (KeyError, IndexError):
+            heartbeat_value = heartbeat_template
+        self.heartbeat_path = Path(heartbeat_value)
 
     def run(self, max_iterations: Optional[int] = None) -> None:
         bars_limit = (
@@ -153,6 +178,7 @@ class LiveEngine:
                             else None,
                             timestamp=self._last_bar_timestamp or pd.Timestamp.utcnow(),
                             reason_source="exception",
+                            force=True,
                         )
                     continue
         except KeyboardInterrupt:
@@ -433,6 +459,9 @@ class LiveEngine:
                     client_order_id=client_order_id,
                     **extra,
                 )
+            except ExchangeRiskLimitError as exc:
+                self._handle_exchange_limit_error(exc)
+                return {}
             except Exception as exc:  # pragma: no cover - network/exchange errors
                 last_exc = exc
                 self.logger.exception(
@@ -443,6 +472,20 @@ class LiveEngine:
         if last_exc:
             raise last_exc
         return {}
+
+    def _handle_exchange_limit_error(self, exc: Exception) -> None:
+        msg = f"Order blocked by exchange risk limits: {exc}"
+        self.logger.warning(msg)
+        if self.kill_switch:
+            try:
+                self.kill_switch.register_exception(dt.datetime.utcnow())
+            except Exception:
+                self.logger.exception("Failed to register kill-switch exception for limit error.")
+        if self.notifier:
+            try:
+                self.notifier.warn(msg)
+            except Exception:
+                self.logger.exception("Failed to send notifier warning for limit error.")
 
     def _open_position(
         self,
@@ -671,9 +714,16 @@ class LiveEngine:
         day_key: Optional[pd.Timestamp],
         timestamp: pd.Timestamp,
         reason_source: Optional[str] = None,
+        *,
+        force: bool = False,
     ) -> bool:
         if not self.kill_switch:
             return False
+        interval = self._kill_switch_eval_interval or 1
+        if not force and self._kill_switch_last_eval_iter >= 0:
+            if (self.iteration - self._kill_switch_last_eval_iter) < interval:
+                return False
+        self._kill_switch_last_eval_iter = self.iteration
         realized = float(self.daily_realized_pnl.get(day_key, 0.0) if day_key is not None else 0.0)
         ks_state = self.kill_switch.evaluate(
             dt.datetime.utcnow(),
@@ -690,6 +740,13 @@ class LiveEngine:
                 reason_source or "evaluation",
             )
             self._notify_kill_switch(ks_state, equity, realized)
+            self.kill_switch_triggered_flag = True
+            self.kill_switch_triggered_reason = (
+                ks_state.reason.value
+                if isinstance(ks_state.reason, KillSwitchReason)
+                else str(ks_state.reason)
+            )
+            self.kill_switch_triggered_ts = timestamp
             try:
                 self.flatten_all()
             except Exception:
@@ -762,6 +819,11 @@ class LiveEngine:
             "last_orders": exec_state.get("recent_orders", []),
             "timestamp": time.time(),
         }
+        snapshot["kill_switch_triggered"] = self.kill_switch_triggered_flag
+        snapshot["kill_switch_reason"] = self.kill_switch_triggered_reason
+        snapshot["kill_switch_ts"] = (
+            self.kill_switch_triggered_ts.isoformat() if self.kill_switch_triggered_ts is not None else None
+        )
         if self.kill_switch:
             ks_state = self.kill_switch.state
             snapshot["kill_switch"] = {

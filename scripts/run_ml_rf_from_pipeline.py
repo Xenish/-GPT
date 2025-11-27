@@ -11,9 +11,9 @@ import numpy as np
 import pandas as pd
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score
 
-from finantradealgo.features.feature_pipeline_15m import (
+from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
-    get_feature_cols_15m,
+    get_feature_cols,
 )
 from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
 from finantradealgo.ml.model import SklearnLongModel, SklearnModelConfig
@@ -34,7 +34,7 @@ def main() -> None:
     df_feat, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
 
     preset = pipeline_meta.get("feature_preset") or sys_cfg.get("features", {}).get("feature_preset", "extended")
-    feature_cols = pipeline_meta.get("feature_cols") or get_feature_cols_15m(df_feat, preset)
+    feature_cols = pipeline_meta.get("feature_cols") or get_feature_cols(df_feat, preset)
     pipeline_version = pipeline_meta.get("pipeline_version", "unknown")
     log_run_header(symbol, timeframe, preset, pipeline_version)
 

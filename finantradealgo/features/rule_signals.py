@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from typing import List, Optional
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -32,6 +35,8 @@ class RuleSignalConfig:
     use_fvg_filter: bool = False
     min_sentiment: Optional[float] = None
     max_sentiment: Optional[float] = None
+    enable_flow_filters: bool = False
+    enable_sentiment_filters: bool = False
 
     @classmethod
     def from_dict(cls, data: Optional[dict]) -> "RuleSignalConfig":
@@ -61,6 +66,10 @@ class RuleSignalConfig:
             use_fvg_filter=data.get("use_fvg_filter", cls.use_fvg_filter),
             min_sentiment=data.get("min_sentiment", cls.min_sentiment),
             max_sentiment=data.get("max_sentiment", cls.max_sentiment),
+            enable_flow_filters=data.get("enable_flow_filters", cls.enable_flow_filters),
+            enable_sentiment_filters=data.get(
+                "enable_sentiment_filters", cls.enable_sentiment_filters
+            ),
         )
 
 
@@ -123,16 +132,28 @@ def build_rule_signals(
         )
         entry_core = entry_core & (df[fvg_col] == 1)
 
-    if cfg.min_sentiment is not None or cfg.max_sentiment is not None:
+    if cfg.enable_sentiment_filters and (
+        cfg.min_sentiment is not None or cfg.max_sentiment is not None
+    ):
         if "sentiment_score" not in df.columns:
-            raise ValueError(
-                "RuleSignalConfig requires sentiment filtering but 'sentiment_score' column is missing. "
-                "Enable sentiment features in the pipeline."
+            logger.warning(
+                "[RULE] Sentiment filter enabled but 'sentiment_score' missing; disabling sentiment filter."
             )
-        lower = cfg.min_sentiment if cfg.min_sentiment is not None else float("-inf")
-        upper = cfg.max_sentiment if cfg.max_sentiment is not None else float("inf")
-        sentiment_mask = df["sentiment_score"].between(lower, upper)
-        entry_core = entry_core & sentiment_mask
+        else:
+            lower = cfg.min_sentiment if cfg.min_sentiment is not None else float("-inf")
+            upper = cfg.max_sentiment if cfg.max_sentiment is not None else float("inf")
+            sentiment_mask = df["sentiment_score"].between(lower, upper)
+            entry_core = entry_core & sentiment_mask
+
+    if cfg.enable_flow_filters:
+        basis_col = "flow_basis"
+        if basis_col not in df.columns:
+            logger.warning(
+                "[RULE] Flow filter enabled but '%s' missing; disabling flow filter.",
+                basis_col,
+            )
+        else:
+            entry_core = entry_core & (df[basis_col] > 0)
 
     if cfg.use_patterns:
         patt = (

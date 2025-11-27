@@ -1,11 +1,12 @@
 from __future__ import annotations
 
-import itertools
 from typing import Any, Dict, List
 
 import numpy as np
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.model_selection import StratifiedKFold, cross_val_score
+
+from research.grid_search import run_generic_grid_search
 
 
 def run_rf_grid_search(
@@ -24,12 +25,7 @@ def run_rf_grid_search(
 
     skf = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=random_state)
 
-    keys = list(param_grid.keys())
-    results: List[Dict[str, Any]] = []
-
-    for values in itertools.product(*(param_grid[k] for k in keys)):
-        params = dict(zip(keys, values))
-
+    def _evaluate(params: Dict[str, Any]) -> Dict[str, Any]:
         clf_kwargs = {
             "n_estimators": 100,
             "random_state": random_state,
@@ -41,18 +37,15 @@ def run_rf_grid_search(
         acc_scores = cross_val_score(clf, X, y, cv=skf, scoring="accuracy", n_jobs=-1)
         f1_scores = cross_val_score(clf, X, y, cv=skf, scoring="f1", n_jobs=-1)
 
-        results.append(
-            {
-                "params": params,
-                "mean_accuracy": float(acc_scores.mean()),
-                "std_accuracy": float(acc_scores.std()),
-                "mean_f1": float(f1_scores.mean()),
-                "std_f1": float(f1_scores.std()),
-                "n_splits": n_splits,
-            }
-        )
+        return {
+            "mean_accuracy": float(acc_scores.mean()),
+            "std_accuracy": float(acc_scores.std()),
+            "mean_f1": float(f1_scores.mean()),
+            "std_f1": float(f1_scores.std()),
+            "n_splits": n_splits,
+        }
 
-    return results
+    return run_generic_grid_search(param_grid, _evaluate)
 
 
 __all__ = ["run_rf_grid_search"]

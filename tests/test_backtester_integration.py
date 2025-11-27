@@ -3,7 +3,7 @@ from __future__ import annotations
 import pandas as pd
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
-from finantradealgo.features.feature_pipeline_15m import (
+from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
 )
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine

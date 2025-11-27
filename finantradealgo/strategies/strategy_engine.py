@@ -1,10 +1,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple, Type
+from typing import Any, Callable, Dict, Optional, Type
 
 from finantradealgo.core.strategy import BaseStrategy
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
+from finantradealgo.strategies.param_space import ParamSpace
+from finantradealgo.strategies.rule_param_space import RULE_PARAM_SPACE
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
 from finantradealgo.strategies.sweep_reversal import (
     SweepReversalConfig,
@@ -32,6 +34,7 @@ class StrategyMeta:
     uses_market_structure: bool
     default_label_preset: Optional[str] = None
     default_feature_preset: Optional[str] = None
+    param_space: Optional[ParamSpace] = None
 
 
 @dataclass
@@ -70,7 +73,7 @@ def _default_extractor(name: str) -> Callable[[Dict[str, Any]], Dict[str, Any]]:
     return _inner
 
 
-STRATEGY_REGISTRY: Dict[str, StrategySpec] = {
+STRATEGY_SPECS: Dict[str, StrategySpec] = {
     "rule": StrategySpec(
         name="rule",
         strategy_cls=RuleSignalStrategy,
@@ -84,6 +87,7 @@ STRATEGY_REGISTRY: Dict[str, StrategySpec] = {
             uses_market_structure=True,
             default_label_preset=None,
             default_feature_preset="extended",
+            param_space=RULE_PARAM_SPACE,
         ),
     ),
     "ml": StrategySpec(
@@ -158,10 +162,10 @@ def create_strategy(
     Factory that wires YAML config -> dataclasses -> concrete strategy instances.
     """
     name = strategy_name.lower()
-    if name not in STRATEGY_REGISTRY:
-        raise ValueError(f"Unsupported strategy '{strategy_name}'. Available: {list(STRATEGY_REGISTRY)}")
+    if name not in STRATEGY_SPECS:
+        raise ValueError(f"Unsupported strategy '{strategy_name}'. Available: {list(STRATEGY_SPECS)}")
 
-    spec = STRATEGY_REGISTRY[name]
+    spec = STRATEGY_SPECS[name]
     base_config = spec.config_extractor(system_cfg) or {}
     if overrides:
         merged = dict(base_config)
@@ -173,11 +177,23 @@ def create_strategy(
     return spec.strategy_cls(config_obj)
 
 
+STRATEGY_REGISTRY: Dict[str, StrategyMeta] = {
+    name: spec.meta for name, spec in STRATEGY_SPECS.items()
+}
+
+
 def get_strategy_meta(strategy_name: str) -> StrategyMeta:
     name = strategy_name.lower()
-    if name not in STRATEGY_REGISTRY:
-        raise ValueError(f"Unknown strategy for meta lookup: {strategy_name}")
-    return STRATEGY_REGISTRY[name].meta
+    try:
+        return STRATEGY_REGISTRY[name]
+    except KeyError:
+        raise ValueError(f"Unknown strategy '{strategy_name}'")
 
 
-__all__ = ["StrategyMeta", "create_strategy", "get_strategy_meta", "STRATEGY_REGISTRY"]
+__all__ = [
+    "StrategyMeta",
+    "create_strategy",
+    "get_strategy_meta",
+    "STRATEGY_REGISTRY",
+    "STRATEGY_SPECS",
+]

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List
+from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 
 REQUIRED_COLUMNS: List[str] = [
@@ -15,6 +18,31 @@ REQUIRED_COLUMNS: List[str] = [
     "close",
     "volume",
 ]
+
+FLOW_REQUIRED_BASE = ["perp_premium", "basis"]
+FLOW_OPTIONAL_COLUMNS = ["oi", "oi_change", "liq_up", "liq_down"]
+FLOW_OUTLIER_LIMITS: dict[str, Tuple[float, float]] = {
+    "oi": (-5e9, 5e9),
+    "oi_change": (-5e7, 5e7),
+    "perp_premium": (-5.0, 5.0),
+    "basis": (-10.0, 10.0),
+    "liq_up": (-5e9, 5e9),
+    "liq_down": (-5e9, 5e9),
+}
+FLOW_COMBINED_FILENAMES = (
+    "flow_{symbol}_{timeframe}.csv",
+    "{symbol}_{timeframe}_flow.csv",
+)
+
+SENTIMENT_REQUIRED_COLUMNS = ["sentiment_score"]
+SENTIMENT_OPTIONAL_DEFAULTS = {"volume": 0.0, "source": "unknown"}
+SENTIMENT_OUTLIER_LIMITS: dict[str, Tuple[float, float]] = {
+    "sentiment_score": (-1.0, 1.0),
+}
+SENTIMENT_COMBINED_FILENAMES = (
+    "sentiment_{symbol}_{timeframe}.csv",
+    "{symbol}_{timeframe}_sentiment.csv",
+)
 
 
 @dataclass
@@ -45,9 +73,113 @@ def _load_timeseries_csv(path: Path) -> pd.DataFrame:
     df = pd.read_csv(path)
     if "timestamp" not in df.columns:
         raise ValueError(f"CSV at {path} missing timestamp column")
-    df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+    df["timestamp"] = _normalize_timestamp_series(df["timestamp"], source=str(path))
+    df = df.dropna(subset=["timestamp"])
     df = df.sort_values("timestamp").reset_index(drop=True)
     return df
+
+
+def _normalize_timestamp_series(series: pd.Series, source: str) -> pd.Series:
+    ser = series
+    if pd.api.types.is_datetime64_any_dtype(ser):
+        return pd.to_datetime(ser, utc=True)
+    if pd.api.types.is_numeric_dtype(ser):
+        ser = pd.to_numeric(ser, errors="coerce")
+        max_abs = ser.dropna().abs().max()
+        if pd.isna(max_abs):
+            unit = "s"
+        elif max_abs > 1e15:
+            unit = "ns"
+        elif max_abs > 1e12:
+            unit = "ms"
+        else:
+            unit = "s"
+        return pd.to_datetime(ser, utc=True, unit=unit, errors="coerce")
+    try:
+        return pd.to_datetime(ser, utc=True, errors="coerce")
+    except Exception:
+        logger.warning("Failed to parse timestamp column for %s; returning NaT.", source)
+        return pd.to_datetime(pd.Series([pd.NaT] * len(series)))
+
+
+def _validate_monotonic(df: pd.DataFrame, label: str) -> pd.DataFrame:
+    if not df["timestamp"].is_monotonic_increasing:
+        logger.warning("%s timestamps not sorted. Re-sorting.", label)
+        df = df.sort_values("timestamp").reset_index(drop=True)
+    return df
+
+
+def _remove_outliers(df: pd.DataFrame, limits: dict[str, Tuple[float, float]], label: str) -> pd.DataFrame:
+    if df.empty:
+        return df
+    mask = pd.Series(True, index=df.index)
+    for col, (low, high) in limits.items():
+        if col in df.columns:
+            mask &= df[col].between(low, high)
+    removed = len(df) - int(mask.sum())
+    if removed > 0:
+        logger.warning("%s outlier filter removed %s rows.", label, removed)
+    return df[mask].reset_index(drop=True)
+
+
+def _prepare_flow_df(df: pd.DataFrame, source: str) -> Optional[pd.DataFrame]:
+    if df is None or df.empty:
+        return None
+    df = _validate_monotonic(df, "Flow features")
+    df = _remove_outliers(df, FLOW_OUTLIER_LIMITS, "Flow features")
+    missing = [c for c in FLOW_REQUIRED_BASE if c not in df.columns]
+    if missing:
+        logger.error("[FLOW] Missing required columns %s in %s", missing, source)
+        return None
+    df = df.dropna(subset=FLOW_REQUIRED_BASE)
+    if df.empty:
+        logger.warning("[FLOW] All rows dropped due to NaN in required columns for %s", source)
+        return None
+    keep_cols = ["timestamp"] + FLOW_REQUIRED_BASE + FLOW_OPTIONAL_COLUMNS
+    keep_cols = [c for c in keep_cols if c in df.columns]
+    return df[keep_cols].reset_index(drop=True)
+
+
+def _prepare_sentiment_df(df: pd.DataFrame, source: str) -> Optional[pd.DataFrame]:
+    if df is None or df.empty:
+        return None
+    df = _validate_monotonic(df, "Sentiment features")
+    df = _remove_outliers(df, SENTIMENT_OUTLIER_LIMITS, "Sentiment features")
+    if "sentiment_score" not in df.columns:
+        logger.error("[SENTIMENT] Missing required 'sentiment_score' column in %s", source)
+        return None
+    df = df.dropna(subset=["sentiment_score"])
+    if df.empty:
+        logger.warning("[SENTIMENT] All rows dropped due to NaN in %s", source)
+        return None
+    for col, default in SENTIMENT_OPTIONAL_DEFAULTS.items():
+        if col not in df.columns:
+            df[col] = default
+    columns = ["timestamp", "sentiment_score"] + list(SENTIMENT_OPTIONAL_DEFAULTS.keys())
+    columns.extend(c for c in df.columns if c not in columns)
+    return df[columns].reset_index(drop=True)
+
+
+def _load_flow_dataframe(path: Path) -> Optional[pd.DataFrame]:
+    try:
+        df = _load_timeseries_csv(path)
+    except FileNotFoundError:
+        return None
+    except ValueError as exc:
+        logger.warning("Invalid flow features file at %s: %s", path, exc)
+        return None
+    return _prepare_flow_df(df, str(path))
+
+
+def _load_sentiment_dataframe(path: Path) -> Optional[pd.DataFrame]:
+    try:
+        df = _load_timeseries_csv(path)
+    except FileNotFoundError:
+        return None
+    except ValueError as exc:
+        logger.warning("Invalid sentiment features file at %s: %s", path, exc)
+        return None
+    return _prepare_sentiment_df(df, str(path))
 
 
 def load_flow_features(
@@ -56,12 +188,54 @@ def load_flow_features(
     *,
     flow_dir: str | Path | None = None,
     base_dir: str | Path = "data",
-) -> pd.DataFrame:
-    if flow_dir:
-        path = Path(flow_dir) / f"{symbol}_{timeframe}_flow.csv"
-    else:
-        path = Path(base_dir) / "flow" / f"{symbol}_{timeframe}_flow.csv"
-    return _load_timeseries_csv(path)
+) -> Optional[pd.DataFrame]:
+    base_path = Path(flow_dir) if flow_dir else Path(base_dir) / "flow"
+    # Try combined files first
+    for pattern in FLOW_COMBINED_FILENAMES:
+        path = base_path / pattern.format(symbol=symbol, timeframe=timeframe)
+        df = _load_flow_dataframe(path)
+        if df is not None:
+            return df
+
+    df_components = _load_flow_metrics_from_dirs(base_path, symbol, timeframe)
+    if df_components is not None:
+        return _prepare_flow_df(df_components, str(base_path))
+
+    logger.warning(
+        "[FLOW] Flow file not found for %s %s at %s",
+        symbol,
+        timeframe,
+        base_path,
+    )
+    return None
+
+
+def _load_flow_metrics_from_dirs(base_path: Path, symbol: str, timeframe: str) -> Optional[pd.DataFrame]:
+    frames: List[pd.DataFrame] = []
+    for metric in FLOW_REQUIRED_BASE + FLOW_OPTIONAL_COLUMNS:
+        metric_dir = base_path / metric
+        path = metric_dir / f"{symbol}_{timeframe}.csv"
+        if not path.is_file():
+            continue
+        try:
+            df_metric = _load_timeseries_csv(path)
+        except Exception as exc:
+            logger.warning("[FLOW] Failed to load %s metric from %s: %s", metric, path, exc)
+            continue
+        value_cols = [c for c in df_metric.columns if c != "timestamp"]
+        if not value_cols:
+            continue
+        value_col = metric if metric in df_metric.columns else value_cols[0]
+        frames.append(
+            df_metric[["timestamp", value_col]].rename(columns={value_col: metric})
+        )
+
+    if not frames:
+        return None
+    merged = frames[0]
+    for extra in frames[1:]:
+        merged = pd.merge(merged, extra, on="timestamp", how="outer")
+    return merged
 
 
 def load_sentiment_features(
@@ -70,9 +244,18 @@ def load_sentiment_features(
     *,
     sentiment_dir: str | Path | None = None,
     base_dir: str | Path = "data",
-) -> pd.DataFrame:
-    if sentiment_dir:
-        path = Path(sentiment_dir) / f"{symbol}_{timeframe}_sentiment.csv"
-    else:
-        path = Path(base_dir) / "sentiment" / f"{symbol}_{timeframe}_sentiment.csv"
-    return _load_timeseries_csv(path)
+) -> Optional[pd.DataFrame]:
+    base_path = Path(sentiment_dir) if sentiment_dir else Path(base_dir) / "sentiment"
+    for pattern in SENTIMENT_COMBINED_FILENAMES:
+        path = base_path / pattern.format(symbol=symbol, timeframe=timeframe)
+        df = _load_sentiment_dataframe(path)
+        if df is not None:
+            return df
+
+    logger.warning(
+        "[SENTIMENT] file not found for %s %s under %s",
+        symbol,
+        timeframe,
+        base_path,
+    )
+    return None

@@ -54,6 +54,7 @@ class LiveConfig:
     state_dir: str = "outputs/live"
     state_path: Optional[str] = None
     latest_state_path: Optional[str] = "outputs/live/live_state.json"
+    heartbeat_path: Optional[str] = None
     replay: ReplayConfig = field(default_factory=ReplayConfig)
     paper: PaperConfig = field(default_factory=PaperConfig)
     ws_use_1m_stream: bool = True
@@ -136,6 +137,7 @@ class LiveConfig:
             state_dir=data.get("state_dir", cls.state_dir),
             state_path=data.get("state_path", cls.state_path),
             latest_state_path=data.get("latest_state_path", cls.latest_state_path),
+            heartbeat_path=data.get("heartbeat_path", cls.heartbeat_path),
             replay=replay_cfg,
             paper=paper_cfg,
             ws_use_1m_stream=bool(ws_section.get("use_1m_stream", cls.ws_use_1m_stream)),
@@ -314,6 +316,12 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
         "ohlcv_dir": "data/ohlcv",
         "external_dir": "data/external",
         "features_dir": "data/features",
+        "symbols": ["BTCUSDT"],
+        "timeframe": "15m",
+        "ohlcv_path_template": "data/ohlcv/{symbol}_{timeframe}.csv",
+        "flow_dir": "data/flow",
+        "sentiment_dir": "data/sentiment",
+        "base_dir": "data",
     },
     "features": {
         "use_base": True,
@@ -433,6 +441,7 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
         "state_dir": "outputs/live",
         "state_path": None,
         "latest_state_path": "outputs/live/live_state.json",
+        "heartbeat_path": None,
         "replay": {
             "bars_limit": 500,
             "start_index": 0,

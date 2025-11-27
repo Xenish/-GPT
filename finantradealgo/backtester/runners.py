@@ -8,8 +8,8 @@ from typing import Any, Dict, Optional
 import pandas as pd
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
-from finantradealgo.features.feature_pipeline_15m import (
-    PIPELINE_VERSION_15M,
+from finantradealgo.features.feature_pipeline import (
+    PIPELINE_VERSION,
     build_feature_pipeline_from_system_config,
 )
 from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id

@@ -12,7 +12,7 @@ if str(ROOT) not in sys.path:
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
 from finantradealgo.backtester.portfolio_engine import PortfolioBacktestEngine
-from finantradealgo.features.feature_pipeline_15m import build_feature_pipeline_from_system_config
+from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.strategy_engine import create_strategy
 from finantradealgo.system.config_loader import PortfolioConfig, load_system_config

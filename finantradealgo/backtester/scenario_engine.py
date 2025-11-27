@@ -9,7 +9,7 @@ import pandas as pd
 from finantradealgo.backtester.backtest_engine import BacktestEngine
 from finantradealgo.backtester.runners import run_backtest_once
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
-from finantradealgo.features.feature_pipeline_15m import build_feature_pipeline_from_system_config
+from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
 from finantradealgo.strategies.strategy_engine import create_strategy
 
 

@@ -5,8 +5,10 @@ import pandas as pd
 from finantradealgo.core.strategy import BaseStrategy, StrategyContext
 from finantradealgo.data_engine.live_data_source import AbstractLiveDataSource, Bar
 from finantradealgo.execution.client_base import ExecutionClientBase
+from finantradealgo.execution.execution_client import ExchangeRiskLimitError
 from finantradealgo.live_trading.live_engine import LiveEngine
 from finantradealgo.system.config_loader import LiveConfig
+from finantradealgo.system.kill_switch import KillSwitch, KillSwitchConfig
 
 
 def _build_system_cfg(mode: str = "exchange") -> dict:
@@ -157,6 +159,66 @@ class AlwaysLongStrategy(BaseStrategy):
         return None
 
 
+class LimitExecutionClient(ExecutionClientBase):
+    def __init__(self):
+        self._portfolio = {"equity": 1000.0}
+
+    def submit_order(
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        order_type: str,
+        *,
+        price: float | None = None,
+        reduce_only: bool = False,
+        client_order_id: str | None = None,
+        **_: dict,
+    ) -> dict:
+        raise ExchangeRiskLimitError("max notional exceeded")
+
+    def cancel_order(self, symbol: str, order_id: str | int) -> None:
+        return None
+
+    def get_open_positions(self):
+        return []
+
+    def get_open_orders(self, symbol: str | None = None):
+        return []
+
+    def get_position(self):
+        return None
+
+    def mark_to_market(self, price: float, timestamp):
+        return None
+
+    def get_portfolio(self):
+        return self._portfolio
+
+    def export_logs(self, timeframe: str):
+        return {}
+
+    def to_state_dict(self):
+        return {"open_positions": []}
+
+    def close(self):
+        return None
+
+
+class DummyNotifier:
+    def __init__(self):
+        self.warn_calls: list[str] = []
+
+    def info(self, msg: str) -> None:
+        return None
+
+    def warn(self, msg: str) -> None:
+        self.warn_calls.append(msg)
+
+    def critical(self, msg: str) -> None:
+        return None
+
+
 def test_live_engine_exchange_executes_orders(monkeypatch):
     system_cfg = _build_system_cfg()
     ds = DummyDataSource([_make_bar(0), _make_bar(1)])
@@ -201,3 +263,31 @@ def test_live_engine_blocks_when_risk_denies():
 
     assert len(exec_client.orders) == 0
     assert exec_client.get_open_positions() == []
+
+
+def test_live_engine_warns_on_exchange_limit():
+    system_cfg = _build_system_cfg()
+    ds = DummyDataSource([_make_bar(0)])
+    exec_client = LimitExecutionClient()
+    risk_engine = AllowRiskEngine(size=1.0)
+    strategy = AlwaysLongStrategy()
+    strategy.init(pd.DataFrame())
+    kill_switch = KillSwitch(KillSwitchConfig(enabled=True, max_exceptions_per_hour=5, min_equity=0.0))
+    notifier = DummyNotifier()
+
+    engine = LiveEngine(
+        system_cfg=system_cfg,
+        strategy=strategy,
+        risk_engine=risk_engine,
+        execution_client=exec_client,
+        data_source=ds,
+        run_id="limit_warn",
+        kill_switch=kill_switch,
+        notifier=notifier,
+    )
+
+    engine.run()
+
+    assert notifier.warn_calls, "Notifier warn should be called for exchange limit violations"
+    assert "Order blocked by exchange risk limits" in notifier.warn_calls[0]
+    assert len(kill_switch.state.recent_exceptions) == 1

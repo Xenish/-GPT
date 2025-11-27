@@ -6,7 +6,7 @@ import pandas as pd
 def add_sentiment_features(
     df_ohlcv: pd.DataFrame,
     df_sent: pd.DataFrame,
-    tolerance: str = "1d",
+    tolerance: str = "1h",
     rolling_window: int = 96,
 ) -> pd.DataFrame:
     if df_sent is None or df_sent.empty:

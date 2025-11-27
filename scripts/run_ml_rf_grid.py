@@ -6,9 +6,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from finantradealgo.features.feature_pipeline_15m import (
+from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
-    get_feature_cols_15m,
+    get_feature_cols,
 )
 from finantradealgo.ml.hyperparameter_search import run_rf_grid_search
 from finantradealgo.ml.labels import build_labels_from_config
@@ -27,7 +27,7 @@ def main() -> None:
     )
 
     feature_preset = cfg.get("ml", {}).get("feature_preset", "extended")
-    feature_cols = get_feature_cols_15m(feature_preset)
+    feature_cols = get_feature_cols(feature_preset)
     df_features = df_features.dropna(subset=feature_cols, how="any")
     X = df_features[feature_cols].values
 

@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import pandas as pd
 
-from finantradealgo.features.feature_pipeline_15m import get_feature_cols_15m
+from finantradealgo.features.feature_pipeline import get_feature_cols
 from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
 from finantradealgo.ml.model import SklearnLongModel, SklearnModelConfig
 
@@ -32,7 +32,7 @@ def prepare_ml_eval_df(
     feature_cols: List[str] = meta.get("feature_cols") or []
     if not feature_cols:
         preset = meta.get("feature_preset", cfg.get("features", {}).get("feature_preset", "extended"))
-        feature_cols = get_feature_cols_15m(df_lab, preset=preset)
+        feature_cols = get_feature_cols(df_lab, preset=preset)
 
     missing = [col for col in feature_cols if col not in df_train.columns]
     if missing:

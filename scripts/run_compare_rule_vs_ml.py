@@ -11,14 +11,14 @@ if str(ROOT) not in sys.path:
 
 import pandas as pd
 
-from finantradealgo.features.feature_pipeline_15m import (
-    PIPELINE_VERSION_15M,
+from finantradealgo.features.feature_pipeline import (
+    PIPELINE_VERSION,
     build_feature_pipeline_from_system_config,
 )
 from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
 from finantradealgo.system.config_loader import load_system_config
-from scripts.run_ml_backtest_15m import run_ml_backtest
-from scripts.run_rule_backtest_15m import run_rule_backtest
+from scripts.run_ml_backtest import run_ml_backtest
+from scripts.run_rule_backtest import run_rule_backtest
 
 
 def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str, extra: str | None = None) -> None:
@@ -59,15 +59,15 @@ def main() -> None:
 
     _, meta = load_model_by_id(model_dir, model_id)
 
-    if meta.pipeline_version and meta.pipeline_version != PIPELINE_VERSION_15M and not args.allow_version_mismatch:
+    if meta.pipeline_version and meta.pipeline_version != PIPELINE_VERSION and not args.allow_version_mismatch:
         raise ValueError(
             f"Model {model_id} trained with pipeline_version {meta.pipeline_version} "
-            f"but current pipeline is {PIPELINE_VERSION_15M}. Re-train or re-run with --allow-version-mismatch."
+            f"but current pipeline is {PIPELINE_VERSION}. Re-train or re-run with --allow-version-mismatch."
         )
-    elif meta.pipeline_version and meta.pipeline_version != PIPELINE_VERSION_15M:
+    elif meta.pipeline_version and meta.pipeline_version != PIPELINE_VERSION:
         print(
             f"[WARN] Model {model_id} trained with pipeline_version {meta.pipeline_version} "
-            f"but current pipeline is {PIPELINE_VERSION_15M}. Feature definitions may differ."
+            f"but current pipeline is {PIPELINE_VERSION}. Feature definitions may differ."
         )
 
     cfg_eval.setdefault("features", {})

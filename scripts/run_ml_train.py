@@ -8,8 +8,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-from finantradealgo.features.feature_pipeline_15m import (
-    PIPELINE_VERSION_15M,
+from finantradealgo.features.feature_pipeline import (
+    PIPELINE_VERSION,
     build_feature_pipeline_from_system_config,
 )
 from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
@@ -53,7 +53,7 @@ def main(
     symbol = pipeline_meta.get("symbol", cfg.get("symbol", "BTCUSDT"))
     timeframe = pipeline_meta.get("timeframe", cfg.get("timeframe", "15m"))
     preset = pipeline_meta.get("feature_preset", cfg.get("features", {}).get("feature_preset", "extended"))
-    pipeline_version = pipeline_meta.get("pipeline_version", PIPELINE_VERSION_15M)
+    pipeline_version = pipeline_meta.get("pipeline_version", PIPELINE_VERSION)
     log_run_header(symbol, timeframe, preset, pipeline_version, extra="mode=train-only")
 
     ml_cfg = cfg.get("ml", {})
@@ -101,7 +101,7 @@ def main(
         train_end=train_end,
         metrics={"train_size": len(df_train)},
         base_dir=model_dir,
-        pipeline_version=pipeline_meta.get("pipeline_version", PIPELINE_VERSION_15M),
+        pipeline_version=pipeline_meta.get("pipeline_version", PIPELINE_VERSION),
     )
 
     if persistence_cfg.get("use_registry", True):

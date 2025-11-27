@@ -37,7 +37,7 @@ from finantradealgo.features.flow_features import add_flow_features
 from finantradealgo.features.sentiment_features import add_sentiment_features
 from finantradealgo.system.config_loader import load_system_config
 
-PIPELINE_VERSION_15M = "v1.0.0"
+PIPELINE_VERSION = "v1.0.0"
 logger = logging.getLogger(__name__)
 
 
@@ -70,7 +70,7 @@ class FeaturePipelineConfig:
     rule_cfg: RuleSignalConfig = field(default_factory=RuleSignalConfig)
 
 
-def build_feature_pipeline_15m(
+def build_feature_pipeline(
     csv_ohlcv_path: str,
     pipeline_cfg: Optional[FeaturePipelineConfig] = None,
     csv_funding_path: Optional[str] = None,
@@ -137,16 +137,16 @@ def build_feature_pipeline_15m(
     if cfg.drop_na:
         df = df.dropna().reset_index(drop=True)
 
-    feature_cols = get_feature_cols_15m(df, preset=cfg.feature_preset)
+    feature_cols = get_feature_cols(df, preset=cfg.feature_preset)
     pipeline_meta: Dict[str, Any] = {
         "feature_cols": feature_cols,
         "feature_preset": cfg.feature_preset,
-        "pipeline_version": PIPELINE_VERSION_15M,
+        "pipeline_version": PIPELINE_VERSION,
     }
     return df, pipeline_meta
 
 
-def get_feature_cols_15m(df: pd.DataFrame, preset: str = "extended") -> List[str]:
+def get_feature_cols(df: pd.DataFrame, preset: str = "extended") -> List[str]:
     blacklist_exact = {
         "timestamp",
         "open",
@@ -200,6 +200,9 @@ def get_feature_cols_15m(df: pd.DataFrame, preset: str = "extended") -> List[str
 def build_feature_pipeline_from_system_config(
     sys_cfg: Optional[Dict[str, Any]] = None,
     pipeline_cfg: Optional[FeaturePipelineConfig] = None,
+    *,
+    symbol: Optional[str] = None,
+    timeframe: Optional[str] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Convenience helper that wires system.yml -> FeaturePipelineConfig and
@@ -239,45 +242,65 @@ def build_feature_pipeline_from_system_config(
         if fp_cfg.rule_allowed_weekdays is None:
             fp_cfg.rule_allowed_weekdays = rule_section.get("allowed_weekdays")
 
-    symbol = cfg.get("symbol", "BTCUSDT")
-    timeframe = cfg.get("timeframe", "15m")
+    live_cfg = cfg.get("live_cfg")
+    data_section = cfg.get("data", {}) or {}
+    data_symbols = data_section.get("symbols") or []
+    resolved_symbol = symbol or cfg.get("symbol") or getattr(live_cfg, "symbol", None)
+    if not resolved_symbol and data_symbols:
+        resolved_symbol = data_symbols[0]
+    resolved_timeframe = (
+        timeframe
+        or data_section.get("timeframe")
+        or cfg.get("timeframe")
+        or getattr(live_cfg, "timeframe", None)
+    )
+    if not resolved_symbol:
+        raise ValueError("Symbol must be provided via args or system config.")
+    if not resolved_timeframe:
+        raise ValueError("Timeframe must be provided via args or system config.")
 
-    data_section = cfg.get("data", {})
     ohlcv_dir = Path(data_section.get("ohlcv_dir", "data/ohlcv"))
     external_dir = Path(data_section.get("external_dir", "data/external"))
-
-    csv_ohlcv = ohlcv_dir / f"{symbol}_{timeframe}.csv"
-    csv_funding = external_dir / "funding" / f"{symbol}_{timeframe}_funding.csv"
-    csv_oi = external_dir / "open_interest" / f"{symbol}_{timeframe}_oi.csv"
+    ohlcv_template = data_section.get("ohlcv_path_template")
+    if ohlcv_template:
+        csv_ohlcv = Path(ohlcv_template.format(symbol=resolved_symbol, timeframe=resolved_timeframe))
+    else:
+        csv_ohlcv = ohlcv_dir / f"{resolved_symbol}_{resolved_timeframe}.csv"
+    csv_funding = external_dir / "funding" / f"{resolved_symbol}_{resolved_timeframe}_funding.csv"
+    csv_oi = external_dir / "open_interest" / f"{resolved_symbol}_{resolved_timeframe}_oi.csv"
     flow_dir = data_section.get("flow_dir")
     sentiment_dir = data_section.get("sentiment_dir")
     base_data_dir = data_section.get("base_dir", "data")
 
     flow_df = None
     if fp_cfg.use_flow_features:
-        try:
-            flow_df = load_flow_features(
-                symbol,
-                timeframe,
-                flow_dir=flow_dir,
-                base_dir=base_data_dir,
+        flow_df = load_flow_features(
+            resolved_symbol,
+            resolved_timeframe,
+            flow_dir=flow_dir,
+            base_dir=base_data_dir,
+        )
+        if flow_df is None or flow_df.empty:
+            logger.warning(
+                "[PIPELINE] Flow features requested but no flow data loaded; disabling flow features."
             )
-        except FileNotFoundError:
-            logger.warning("Flow features requested but CSV missing; skipping.")
+            fp_cfg.use_flow_features = False
 
     sentiment_df = None
     if fp_cfg.use_sentiment_features:
-        try:
-            sentiment_df = load_sentiment_features(
-                symbol,
-                timeframe,
-                sentiment_dir=sentiment_dir,
-                base_dir=base_data_dir,
+        sentiment_df = load_sentiment_features(
+            resolved_symbol,
+            resolved_timeframe,
+            sentiment_dir=sentiment_dir,
+            base_dir=base_data_dir,
+        )
+        if sentiment_df is None or sentiment_df.empty:
+            logger.warning(
+                "[PIPELINE] Sentiment features requested but no sentiment data loaded; disabling sentiment features."
             )
-        except FileNotFoundError:
-            logger.warning("Sentiment features requested but CSV missing; skipping.")
+            fp_cfg.use_sentiment_features = False
 
-    df, pipeline_meta = build_feature_pipeline_15m(
+    df, pipeline_meta = build_feature_pipeline(
         csv_ohlcv_path=str(csv_ohlcv),
         pipeline_cfg=fp_cfg,
         csv_funding_path=str(csv_funding) if csv_funding.exists() else None,
@@ -286,6 +309,6 @@ def build_feature_pipeline_from_system_config(
         sentiment_df=sentiment_df,
     )
 
-    pipeline_meta["symbol"] = symbol
-    pipeline_meta["timeframe"] = timeframe
+    pipeline_meta["symbol"] = resolved_symbol
+    pipeline_meta["timeframe"] = resolved_timeframe
     return df, pipeline_meta

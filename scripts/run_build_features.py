@@ -8,7 +8,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 
-from finantradealgo.features.feature_pipeline_15m import (
+from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
 )
 from finantradealgo.system.config_loader import load_system_config

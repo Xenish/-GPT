@@ -12,7 +12,7 @@ from pydantic import BaseModel
 
 from copy import deepcopy
 
-from finantradealgo.features.feature_pipeline_15m import PIPELINE_VERSION_15M
+from finantradealgo.features.feature_pipeline import PIPELINE_VERSION
 from finantradealgo.system.config_loader import load_system_config, PortfolioConfig
 from finantradealgo.backtester.scenario_engine import run_scenario_preset
 from finantradealgo.ml.model_registry import load_registry, validate_registry_entry
@@ -416,7 +416,7 @@ def create_app() -> FastAPI:
             bars.append(BarPoint(**bar_kwargs))
 
         meta = {
-            "pipeline_version": PIPELINE_VERSION_15M,
+            "pipeline_version": PIPELINE_VERSION,
             "features_preset": cfg.get("features", {}).get("feature_preset"),
             "last_updated": pd.Timestamp.utcnow().isoformat(),
             "run_id": run_id,

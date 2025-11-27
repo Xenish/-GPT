@@ -17,6 +17,10 @@ from finantradealgo.system.config_loader import (
 )
 
 
+class ExchangeRiskLimitError(ValueError):
+    """Raised when an order violates configured exchange risk limits."""
+
+
 class ExchangeExecutionClient(ExecutionClientBase):
     def __init__(
         self,
@@ -172,21 +176,21 @@ class ExchangeExecutionClient(ExecutionClientBase):
     def _check_limits(self, symbol: str, qty: float, price: float, leverage: int) -> None:
         notional = abs(qty * price)
         if self.risk_cfg.max_leverage and leverage > self.risk_cfg.max_leverage:
-            raise ValueError(
+            raise ExchangeRiskLimitError(
                 f"Requested leverage {leverage} exceeds max {self.risk_cfg.max_leverage}"
             )
         if (
             self.risk_cfg.max_position_notional > 0
             and notional > self.risk_cfg.max_position_notional
         ):
-            raise ValueError(
+            raise ExchangeRiskLimitError(
                 f"Order notional {notional} exceeds max {self.risk_cfg.max_position_notional}"
             )
         if (
             self.risk_cfg.max_position_contracts > 0
             and abs(qty) > self.risk_cfg.max_position_contracts
         ):
-            raise ValueError(
+            raise ExchangeRiskLimitError(
                 f"Order qty {qty} exceeds max contracts {self.risk_cfg.max_position_contracts}"
             )
 
@@ -225,4 +229,9 @@ def create_execution_client(
     )
 
 
-__all__ = ["ExecutionClientBase", "ExchangeExecutionClient", "create_execution_client"]
+__all__ = [
+    "ExecutionClientBase",
+    "ExchangeExecutionClient",
+    "ExchangeRiskLimitError",
+    "create_execution_client",
+]

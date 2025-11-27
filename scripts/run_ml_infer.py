@@ -10,8 +10,8 @@ if str(ROOT) not in sys.path:
 
 from finantradealgo.backtester.backtest_engine import BacktestConfig, Backtester
 from finantradealgo.core.report import ReportConfig, generate_report
-from finantradealgo.features.feature_pipeline_15m import (
-    PIPELINE_VERSION_15M,
+from finantradealgo.features.feature_pipeline import (
+    PIPELINE_VERSION,
     build_feature_pipeline_from_system_config,
 )
 from finantradealgo.ml.model_registry import (
@@ -77,7 +77,7 @@ def main() -> None:
     missing = [c for c in meta.feature_cols if c not in df.columns]
     if missing:
         raise ValueError(f"Feature mismatch between model and pipeline: missing {missing}")
-    current_version = pipeline_meta.get("pipeline_version", PIPELINE_VERSION_15M)
+    current_version = pipeline_meta.get("pipeline_version", PIPELINE_VERSION)
     if meta.pipeline_version and meta.pipeline_version != current_version:
         if not args.allow_version_mismatch:
             raise ValueError(

@@ -22,6 +22,6 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - NEXT_PUBLIC_API_BASE_URL=http://localhost:8000
+      - NEXT_PUBLIC_API_BASE_URL=http://finantrade_api:8000
     depends_on:
       - api

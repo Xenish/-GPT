@@ -58,6 +58,8 @@ uvicorn finantradealgo.api.server:create_app --factory --reload
 ### Frontend
 ```bash
 cd frontend/web
+cp .env.local.example .env.local
+# gerekirse NEXT_PUBLIC_API_BASE_URL'i .env.local içinde güncelle
 npm install
 npm run dev
 ```
@@ -68,6 +70,42 @@ docker-compose up --build
 # API → http://localhost:8000/docs
 # UI  → http://localhost:3000
 ```
+Docker içinde frontend servisi `NEXT_PUBLIC_API_BASE_URL=http://finantrade_api:8000` ile gelir; farklı ortamlar için `docker-compose.override.yml` veya environment injector kullanabilirsiniz.
+
+### CLI kullanımı
+```bash
+pip install -e .
+
+# Örnek komutlar:
+finantrade build-features --symbol AIAUSDT --tf 15m
+finantrade backtest --strategy rule --symbol AIAUSDT --tf 15m
+finantrade ml-train --symbol AIAUSDT --tf 15m --preset extended
+finantrade live-paper --symbol AIAUSDT --tf 15m
+```
+
+Backend exchange erişimi için çevre değişkenleri:
+```bash
+cp .env.example .env
+# BINANCE_FUTURES_API_KEY / BINANCE_FUTURES_API_SECRET değerlerini doldurun
+# Ardından `source .env` (Linux/macOS) veya `Set-Content Env:*` (Windows) ile env'e yükleyin
+```
+
+Testnet dry-run:
+```bash
+# config/system.yml içinde exchange.dry_run=true iken
+python scripts/run_exchange_dry_test.py
+# Binance testnet endpointlerine bağlanır, account info basar, order göndermeden çıkar.
+```
+
+### Live WS debug
+Binance WS kaynağını hızlıca test etmek için:
+```bash
+# exchange/testnet ayarlarını yaptıktan sonra
+python scripts/run_live_ws_debug.py
+# veya belirli semboller:
+python scripts/run_live_ws_debug.py --symbol BTCUSDT --symbol ETHUSDT --count 5
+```
+Script, gelen agregasyon barlarını stdout'a yazar; CTRL+C ile çıkabilirsiniz.
 
 ## Kısaltılmış Dosya Ağacı
 ```

@@ -1,42 +1,53 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from dataclasses import dataclass, field
 from typing import Optional
 
 import pandas as pd
 
 
-class LiveDataSource(ABC):
-    """
-    Base interface for live data feeds so trading engines can
-    swap between replay, websocket, or REST implementations.
-    """
+@dataclass
+class Bar:
+    symbol: str
+    timeframe: str
+    open_time: pd.Timestamp
+    close_time: pd.Timestamp
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    extras: dict = field(default_factory=dict)
 
+
+class AbstractLiveDataSource(ABC):
     @abstractmethod
     def connect(self) -> None:
-        """Initialize network/file handles prior to streaming data."""
+        """Initialize underlying sockets/files."""
 
     @abstractmethod
-    def next_bar(self) -> Optional[pd.Series]:
-        """Return the next bar/tick. Should return None when no data remains."""
+    def next_bar(self) -> Optional[Bar]:
+        """Return the next bar (blocking if necessary)."""
 
     @abstractmethod
     def close(self) -> None:
-        """Tear down any open resources."""
+        """Close connections / cleanup."""
 
 
-class FileReplayDataSource(LiveDataSource):
+class FileReplayDataSource(AbstractLiveDataSource):
     """
     Simple replay data source backed by a pandas DataFrame. Each call to
-    next_bar returns the next row so that we can test live components
-    offline using historical features. Supports optional bars_limit and
-    start offsets for partial replays.
+    next_bar returns the next row as a Bar so we can test live components
+    offline using historical features.
     """
 
     def __init__(
         self,
         df: pd.DataFrame,
         *,
+        symbol: str = "UNKNOWN",
+        timeframe: str = "15m",
         bars_limit: Optional[int] = None,
         start_index: int = 0,
         start_timestamp: Optional[str] = None,
@@ -45,6 +56,8 @@ class FileReplayDataSource(LiveDataSource):
         if df is None or df.empty:
             raise ValueError("Replay DataFrame must not be empty.")
         self._df = df.reset_index(drop=True)
+        self.symbol = symbol
+        self.timeframe = timeframe
         self._bars_limit = bars_limit if bars_limit is None or bars_limit > 0 else None
         self._start_index = max(start_index, 0)
         self._start_timestamp = (
@@ -75,14 +88,31 @@ class FileReplayDataSource(LiveDataSource):
                 idx = len(self._df)
         return idx
 
-    def next_bar(self) -> Optional[pd.Series]:
+    def next_bar(self) -> Optional[Bar]:
         if not self._connected:
             self.connect()
         if self._current_idx >= self._end_idx:
             return None
         row = self._df.iloc[self._current_idx]
         self._current_idx += 1
-        return row
+        open_time = (
+            pd.to_datetime(row[self._timestamp_col])
+            if self._timestamp_col in row
+            else pd.Timestamp.utcnow()
+        )
+        extras = row.to_dict()
+        return Bar(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            open_time=open_time,
+            close_time=open_time,
+            open=float(row.get("open", row.get("close"))),
+            high=float(row.get("high", row.get("close"))),
+            low=float(row.get("low", row.get("close"))),
+            close=float(row.get("close")),
+            volume=float(row.get("volume", 0.0)),
+            extras=extras,
+        )
 
     def close(self) -> None:
         self._connected = False

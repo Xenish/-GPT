@@ -1,0 +1,117 @@
+Metadata-Version: 2.4
+Name: finantradealgo
+Version: 0.1.0
+Summary: FinanTradeAlgo research and backtesting toolkit
+Requires-Python: >=3.10
+Description-Content-Type: text/markdown
+Requires-Dist: pandas
+Requires-Dist: numpy
+Requires-Dist: scikit-learn
+Requires-Dist: joblib
+Requires-Dist: requests
+Requires-Dist: PyYAML
+Requires-Dist: xgboost
+Requires-Dist: pytest
+Requires-Dist: fastapi
+Requires-Dist: uvicorn[standard]
+Requires-Dist: pydantic>=2.0
+Requires-Dist: click>=8.0
+
+# FinanTradeAlgo
+
+## Proje Özeti
+- **15m kripto araştırma ortamı**: Şu anda AIAUSDT ve BTCUSDT odaklı ama yapı diğer sembollere de kolayca genişliyor.
+- **Feature pipeline** fiyat/TA + microstructure + market structure + funding/OI + flow + sentiment kaynaklarını tek veri setinde birleştiriyor.
+- **Rule & ML stratejileri** portföy backtester, senaryo motoru, live/paper trading engine ve FastAPI + Next.js tabanlı UI ile uçtan uca deney alanı sağlıyor.
+- **Registry & explainability**: ML modelleri için registry, feature importance, hyperparam grid search ve CLI wrapper destekleniyor.
+- **API & Frontend**: FastAPI backend ve Next.js frontend, kullanıcıya chart/portfolio/strategy lab/ML lab/live kontrol paneli sunuyor.
+
+## Mimari Overview
+- **Backend katmanları**
+  - `finantradealgo/data_engine`: OHLCV, funding, OI, flow, sentiment vb. loader ve veri kaynakları.
+  - `finantradealgo/features`: TA, micro/macro structure, flow, sentiment ve rule sinyalleri dahil feature pipeline.
+  - `finantradealgo/strategies`: Rule, ML ve diğer strateji sınıfları + StrategyEngine.
+  - `finantradealgo/risk`: RiskEngine, pozisyon boyutlama, günlük limit vb.
+  - `finantradealgo/backtester`: BacktestEngine, PortfolioBacktestEngine, ScenarioEngine, Walkforward araçları.
+  - `finantradealgo/ml`: Labeling, modeller, registry, hyperparam search, importance.
+  - `finantradealgo/live_trading`: LiveEngine, replay data source, execution client, snapshot sistemi.
+  - `finantradealgo/api`: FastAPI sunucusu; backtest, portfolio, scenario, ML model ve live control endpoint’leri.
+- **Frontend**
+  - `frontend/web`: Next.js + lightweight-charts tabanlı UI; tabs: Single instrument chart, Portfolio, Strategy Lab, ML Lab, Live Control.
+
+## Kurulum
+```bash
+git clone https://github.com/<you>/TradeProject.git
+cd TradeProject
+
+python -m venv .venv
+# Linux / macOS
+source .venv/bin/activate
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+
+pip install -r requirements.txt
+```
+
+## Hızlı Başlangıç
+### Data / Feature
+```bash
+python scripts/run_build_features_15m.py
+# veya CLI
+finantrade build-features --symbol AIAUSDT --tf 15m
+```
+
+### ML Train + Backtest
+```bash
+python scripts/run_ml_train_15m.py
+python scripts/run_ml_backtest_15m.py
+```
+
+### API
+```bash
+python scripts/run_api.py
+# veya uvicorn
+uvicorn finantradealgo.api.server:create_app --factory --reload
+```
+
+### Frontend
+```bash
+cd frontend/web
+cp .env.local.example .env.local
+# gerekirse NEXT_PUBLIC_API_BASE_URL'i .env.local içinde güncelle
+npm install
+npm run dev
+```
+
+### Docker Quickstart
+```bash
+docker-compose up --build
+# API → http://localhost:8000/docs
+# UI  → http://localhost:3000
+```
+Docker içinde frontend servisi `NEXT_PUBLIC_API_BASE_URL=http://finantrade_api:8000` ile gelir; farklı ortamlar için `docker-compose.override.yml` veya environment injector kullanabilirsiniz.
+
+## Kısaltılmış Dosya Ağacı
+```
+config/
+data/
+docs/
+finantradealgo/
+  data_engine/
+  features/
+  strategies/
+  risk/
+  backtester/
+  ml/
+  live_trading/
+  api/
+frontend/web/
+scripts/
+tests/
+outputs/
+```
+
+## Notlar
+- Bu depo araştırma ve prototipleme amaçlıdır; **production trading riski size aittir.**
+- Binance / diğer veri kaynakları için rate limit / API key / mevzuat sorumluluğu size aittir.
+- Gönderilen CLI (`finantrade ...`) tüm temel script’leri tek çatı altında toplar.

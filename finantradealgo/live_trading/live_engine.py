@@ -2,16 +2,19 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, List
 
 import pandas as pd
 
 from finantradealgo.core.strategy import BaseStrategy, StrategyContext
-from finantradealgo.data_engine.live_data_source import LiveDataSource
+from finantradealgo.data_engine.live_data_source import AbstractLiveDataSource, Bar
+from finantradealgo.execution.client_base import ExecutionClientBase
 from finantradealgo.risk.risk_engine import RiskEngine
 from finantradealgo.system.config_loader import LiveConfig
+from finantradealgo.core.portfolio import Position
 
 
 class LiveEngine:
@@ -24,17 +27,25 @@ class LiveEngine:
     def __init__(
         self,
         *,
-        config: LiveConfig,
-        data_source: LiveDataSource,
+        system_cfg: Dict[str, Any],
         strategy: BaseStrategy,
         risk_engine: RiskEngine,
-        execution_client,
-        logger: Optional[logging.Logger] = None,
+        execution_client: ExecutionClientBase,
+        data_source: AbstractLiveDataSource,
         run_id: Optional[str] = None,
+        logger: Optional[logging.Logger] = None,
         pipeline_meta: Optional[Dict[str, Any]] = None,
         strategy_name: str = "unknown",
     ):
-        self.config = config
+        live_cfg = system_cfg.get("live_cfg")
+        if not isinstance(live_cfg, LiveConfig):
+            live_cfg = LiveConfig.from_dict(
+                system_cfg.get("live"),
+                default_symbol=system_cfg.get("symbol"),
+                default_timeframe=system_cfg.get("timeframe"),
+            )
+        self.system_cfg = system_cfg
+        self.config = live_cfg
         self.data_source = data_source
         self.strategy = strategy
         self.risk_engine = risk_engine
@@ -46,6 +57,12 @@ class LiveEngine:
         self.is_running: bool = True
         self.is_paused: bool = False
         self.requested_action: Optional[str] = None  # "pause", "resume", "stop", "flatten"
+        self.data_source_name = getattr(live_cfg, "data_source", "replay").lower()
+        self.stale_data_seconds: Optional[float] = None
+        self.ws_reconnect_count: int = 0
+        self.last_bar_time: Optional[float] = None
+        self._last_bar_timestamp: Optional[pd.Timestamp] = None
+        self.ws_stale_alarm: bool = False
 
         self.price_col = "close"
         self.timestamp_col = "timestamp"
@@ -55,9 +72,10 @@ class LiveEngine:
         self.iteration = 0
         self.blocked_entries = 0
         self.executed_trades = 0
+        self.open_positions: List[Dict[str, Any]] = []
+        self._last_position_sync_iter: int = -1
 
         self.start_time: Optional[pd.Timestamp] = None
-        self.last_bar_time: Optional[pd.Timestamp] = None
 
         live_dir = Path(getattr(self.config, "state_dir", "outputs/live"))
         state_path_override = getattr(self.config, "state_path", None)
@@ -73,11 +91,17 @@ class LiveEngine:
         )
         self.save_state_every = max(int(self.config.paper.save_state_every_n_bars), 0)
 
-    # ------------
-    # Main runner
-    # ------------
-    def run_loop(self, max_iterations: Optional[int] = None) -> None:
-        bars_limit = max_iterations if max_iterations is not None else self.config.replay.bars_limit
+    def run(self, max_iterations: Optional[int] = None) -> None:
+        bars_limit = (
+            max_iterations
+            if max_iterations is not None
+            else getattr(self.config.replay, "bars_limit", None)
+        )
+        initial_cash = getattr(
+            getattr(self.execution_client, "portfolio", None), "initial_cash", None
+        )
+        if initial_cash is None:
+            initial_cash = getattr(self.config.paper, "initial_cash", 0.0)
         self.logger.info(
             (
                 "Starting live engine run_id=%s mode=%s exchange=%s symbol=%s timeframe=%s "
@@ -89,82 +113,148 @@ class LiveEngine:
             self.config.symbol,
             self.config.timeframe,
             bars_limit if bars_limit is not None else "unbounded",
-            self.execution_client.portfolio.initial_cash,
+            initial_cash,
             self.pipeline_meta.get("pipeline_version", "unknown"),
         )
-
         self.start_time = pd.Timestamp.utcnow()
         self.data_source.connect()
-        last_timestamp = pd.Timestamp.utcnow()
-
+        self._refresh_positions()
+        last_timestamp = self.start_time
         try:
             while self.is_running:
                 if bars_limit is not None and self.iteration >= bars_limit:
                     self.logger.info("Reached bars_limit=%s. Stopping loop.", bars_limit)
                     break
-
                 bar = self.data_source.next_bar()
                 if bar is None:
-                    self.logger.info("Data source exhausted; stopping live loop.")
-                    break
-
-                if not isinstance(bar, pd.Series):
-                    bar = pd.Series(bar)
-
-                price = bar.get(self.price_col)
-                ts_val = bar.get(self.timestamp_col)
-                if price is None or pd.isna(price) or ts_val is None:
-                    self.logger.warning("Skipping bar without price/timestamp.")
-                    self.iteration += 1
+                    if not self._handle_no_bar():
+                        break
                     continue
-
-                ts = pd.to_datetime(ts_val)
-                price = float(price)
-                last_timestamp = ts
-                self.last_bar_time = ts
-                self.execution_client.mark_to_market(price, ts)
-                self._load_requested_action()
-                self._apply_pending_action()
-                if not self.is_running:
-                    break
-                if self.is_paused:
-                    self.iteration += 1
-                    if self.save_state_every > 0 and self.iteration % self.save_state_every == 0:
-                        self._write_snapshot(ts)
-                    continue
-
-                day_key = ts.normalize()
-                portfolio_snapshot = self.execution_client.get_portfolio()
-                if day_key not in self.equity_start_of_day:
-                    self.equity_start_of_day[day_key] = portfolio_snapshot["equity"]
-
-                ctx = StrategyContext(
-                    equity=portfolio_snapshot["equity"],
-                    position=self.execution_client.get_position(),
-                    index=self.iteration,
-                )
-                signal = self.strategy.on_bar(bar, ctx)
-                self._process_signal(signal, bar, price, ts, day_key)
-
-                self.iteration += 1
-                if self.save_state_every > 0 and self.iteration % self.save_state_every == 0:
-                    self._write_snapshot(ts)
-
+                last_timestamp = self._on_bar(bar)
         except KeyboardInterrupt:
             self.logger.info("Live loop interrupted by user.")
         except Exception:
             self.logger.exception("Unhandled exception inside live loop.")
             raise
         finally:
-            self.data_source.close()
+            try:
+                self.data_source.close()
+            except Exception:  # pragma: no cover - defensive
+                self.logger.exception("Failed to close data source cleanly.")
+            close_fn = getattr(self.execution_client, "close", None)
+            if callable(close_fn):
+                try:
+                    close_fn()
+                except Exception:
+                    self.logger.exception("Execution client close failed.")
             self._write_snapshot(last_timestamp)
-
         self.logger.info(
             "Live engine finished iterations=%s trades=%s blocked_entries=%s",
             self.iteration,
             self.executed_trades,
             self.blocked_entries,
         )
+
+    # ------------
+    # Main runner
+    # ------------
+    def run_loop(self, max_iterations: Optional[int] = None) -> None:
+        self.run(max_iterations)
+
+    def _handle_no_bar(self) -> bool:
+        """Handle missing bar from data source. Returns False if loop should stop."""
+        if self.data_source_name == "binance_ws":
+            now_ts = time.time()
+            if self.last_bar_time is not None:
+                self.stale_data_seconds = now_ts - self.last_bar_time
+            else:
+                self.stale_data_seconds = None
+            threshold = getattr(self.config, "ws_max_stale_seconds", 30)
+            is_stale = (
+                self.stale_data_seconds is not None and self.stale_data_seconds > threshold
+            )
+            self.ws_stale_alarm = bool(is_stale)
+            if is_stale:
+                self.logger.warning(
+                    "WebSocket data stale for %.2f seconds",
+                    self.stale_data_seconds,
+                )
+            self.ws_reconnect_count = getattr(
+                self.data_source,
+                "get_reconnect_count",
+                lambda: 0,
+            )()
+            return True
+        self.logger.info("Data source exhausted; stopping live loop.")
+        return False
+
+    def _prepare_row(self, bar: Bar | pd.Series) -> tuple[pd.Series, float, pd.Timestamp]:
+        if isinstance(bar, Bar):
+            price = float(bar.close)
+            ts = pd.Timestamp(bar.close_time)
+            row_series = pd.Series(bar.extras or {})
+            if self.timestamp_col not in row_series:
+                row_series[self.timestamp_col] = ts
+            row_series[self.price_col] = price
+            return row_series, price, ts
+        if isinstance(bar, pd.Series):
+            row_series = bar.copy()
+        else:
+            row_series = pd.Series(bar)
+        price = row_series.get(self.price_col)
+        ts_val = row_series.get(self.timestamp_col)
+        if price is None or pd.isna(price) or ts_val is None:
+            raise ValueError("Bar missing price or timestamp.")
+        ts = pd.to_datetime(ts_val)
+        return row_series, float(price), ts
+
+    def _on_bar(self, bar: Bar | pd.Series) -> pd.Timestamp:
+        try:
+            row_series, price, ts = self._prepare_row(bar)
+        except ValueError:
+            self.logger.warning("Skipping bar without price/timestamp.")
+            self.iteration += 1
+            return self._last_bar_timestamp or pd.Timestamp.utcnow()
+
+        self._last_bar_timestamp = ts
+        ts_float = pd.Timestamp(ts).timestamp()
+        self.last_bar_time = ts_float
+        self.stale_data_seconds = max(time.time() - ts_float, 0.0)
+        self.ws_stale_alarm = False
+        if self.data_source_name == "binance_ws":
+            self.ws_reconnect_count = getattr(self.data_source, "get_reconnect_count", lambda: 0)()
+
+        self.execution_client.mark_to_market(price, ts)
+        self._load_requested_action()
+        self._apply_pending_action()
+        if not self.is_running:
+            return ts
+        if self.is_paused:
+            self.iteration += 1
+            if self.save_state_every > 0 and self.iteration % self.save_state_every == 0:
+                self._write_snapshot(ts)
+            return ts
+
+        day_key = ts.normalize()
+        portfolio_snapshot = self.execution_client.get_portfolio() or {}
+        equity = float(portfolio_snapshot.get("equity", 0.0))
+        if day_key not in self.equity_start_of_day:
+            self.equity_start_of_day[day_key] = equity
+
+        positions = self._refresh_positions()
+
+        ctx = StrategyContext(
+            equity=equity,
+            position=self.execution_client.get_position(),
+            index=self.iteration,
+        )
+        signal = self.strategy.on_bar(row_series, ctx)
+        self._process_signal(signal, row_series, price, ts, day_key, positions)
+
+        self.iteration += 1
+        if self.save_state_every > 0 and self.iteration % self.save_state_every == 0:
+            self._write_snapshot(ts)
+        return ts
 
     def shutdown(self) -> None:
         self.logger.info("Shutting down live engine run_id=%s.", self.run_id)
@@ -190,19 +280,42 @@ class LiveEngine:
                 if hasattr(self.execution_client, "close_position_market"):
                     self.execution_client.close_position_market(pos)
                 else:
-                    # Fallback: submit close order using last price
                     last_price = getattr(self.execution_client, "_last_price", None) or pos.get(
                         "current_price", pos.get("entry_price")
                     )
+                    if last_price is None:
+                        continue
+                    qty = pos.get("qty") or pos.get("positionAmt")
+                    if qty is None:
+                        continue
+                    qty = abs(float(qty))
+                    if qty <= 0:
+                        continue
                     ts = getattr(self.execution_client, "_last_timestamp", None) or pd.Timestamp.utcnow()
-                    self.execution_client.submit_order("CLOSE", price=last_price, size=pos.get("qty"), timestamp=ts)
+                    side_raw = str(pos.get("side", "")).upper()
+                    side = "SELL" if "LONG" in side_raw else "BUY"
+                    client_order_id = self._make_client_order_id(
+                        pos.get("symbol", self.config.symbol),
+                        side,
+                        ts,
+                    )
+                    self._submit_order_with_retry(
+                        symbol=pos.get("symbol", self.config.symbol),
+                        side=side,
+                        qty=qty,
+                        order_type="MARKET",
+                        price=last_price,
+                        reduce_only=True,
+                        client_order_id=client_order_id,
+                    )
                 any_closed = True
             except Exception:
                 self.logger.exception("Failed to flatten position: %s", pos)
         self.requested_action = None
         if any_closed:
-            ts_snapshot = getattr(self, "last_bar_time", None) or pd.Timestamp.utcnow()
+            ts_snapshot = self._last_bar_timestamp or pd.Timestamp.utcnow()
             self._write_snapshot(ts_snapshot)
+            self._refresh_positions()
 
     def export_results(self) -> Dict[str, Path]:
         return self.execution_client.export_logs(timeframe=self.config.timeframe)
@@ -248,13 +361,62 @@ class LiveEngine:
         price: float,
         timestamp: pd.Timestamp,
         day_key: pd.Timestamp,
+        positions: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
+        positions = positions if positions is not None else self.open_positions
         if signal == "LONG" and not self.execution_client.has_position():
-            self._open_position(row, price, timestamp, day_key, side="LONG")
+            self._open_position(row, price, timestamp, day_key, side="LONG", positions=positions)
         elif signal == "SHORT" and not self.execution_client.has_position():
-            self._open_position(row, price, timestamp, day_key, side="SHORT")
+            self._open_position(row, price, timestamp, day_key, side="SHORT", positions=positions)
         elif signal == "CLOSE" and self.execution_client.has_position():
             self._close_position(price, timestamp, day_key)
+
+    def _make_client_order_id(
+        self,
+        symbol: str,
+        side: str,
+        timestamp: pd.Timestamp,
+    ) -> str:
+        ts_ms = int(pd.Timestamp(timestamp).timestamp() * 1000)
+        return f"{self.run_id}_{symbol}_{ts_ms}_{side.upper()}_{self.iteration}"
+
+    def _submit_order_with_retry(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: float,
+        order_type: str,
+        price: Optional[float] = None,
+        reduce_only: bool = False,
+        client_order_id: Optional[str] = None,
+        **extra: Any,
+    ) -> Dict[str, Any]:
+        attempts = max(1, int(getattr(self.config, "order_retry_limit", 1) or 1))
+        wait_seconds = max(0.0, float(getattr(self.config, "order_timeout_seconds", 0)))
+        last_exc: Optional[Exception] = None
+        for attempt in range(attempts):
+            try:
+                return self.execution_client.submit_order(
+                    symbol=symbol,
+                    side=side,
+                    qty=qty,
+                    order_type=order_type,
+                    price=price,
+                    reduce_only=reduce_only,
+                    client_order_id=client_order_id,
+                    **extra,
+                )
+            except Exception as exc:  # pragma: no cover - network/exchange errors
+                last_exc = exc
+                self.logger.exception(
+                    "Order submit failed attempt %s/%s: %s", attempt + 1, attempts, exc
+                )
+                if attempt < attempts - 1 and wait_seconds > 0:
+                    time.sleep(min(wait_seconds, 1.0))
+        if last_exc:
+            raise last_exc
+        return {}
 
     def _open_position(
         self,
@@ -264,7 +426,9 @@ class LiveEngine:
         day_key: pd.Timestamp,
         *,
         side: str,
+        positions: Optional[List[Dict[str, Any]]] = None,
     ) -> None:
+        positions = positions if positions is not None else self.open_positions
         equity_today = self.equity_start_of_day.get(day_key)
         current_equity = self.execution_client.get_portfolio()["equity"]
         realized_today = self.daily_realized_pnl.get(day_key, 0.0)
@@ -277,6 +441,8 @@ class LiveEngine:
             equity_start_of_day=equity_today,
             realized_pnl_today=realized_today,
             row=row,
+            open_positions=positions,
+            max_open_trades=getattr(self.config, "max_open_trades", None),
         ):
             self.blocked_entries += 1
             self.logger.warning(
@@ -288,21 +454,29 @@ class LiveEngine:
             )
             return
 
+        current_notional = self._current_notional(self.config.symbol, positions)
         qty = self.risk_engine.calc_position_size(
             equity=current_equity,
             price=price,
             atr=row.get("atr_14"),
             row=row,
+            current_notional=current_notional,
+            max_position_notional=getattr(self.config, "max_position_notional", None),
         )
         if qty <= 0:
             self.logger.debug("Risk engine produced non-positive size; skipping.")
             return
 
-        trade = self.execution_client.submit_order(
-            side,
+        order_side = "BUY" if side == "LONG" else "SELL"
+        client_order_id = self._make_client_order_id(self.config.symbol, order_side, timestamp)
+        trade = self._submit_order_with_retry(
+            symbol=self.config.symbol,
+            side=order_side,
+            qty=qty,
+            order_type="MARKET",
             price=price,
-            size=qty,
-            timestamp=timestamp,
+            reduce_only=False,
+            client_order_id=client_order_id,
         )
         if trade:
             self.logger.info(
@@ -312,6 +486,7 @@ class LiveEngine:
                 price,
                 current_equity,
             )
+            self._refresh_positions()
 
     def _close_position(
         self,
@@ -319,11 +494,36 @@ class LiveEngine:
         timestamp: pd.Timestamp,
         day_key: pd.Timestamp,
     ) -> None:
-        trade = self.execution_client.submit_order(
-            "CLOSE",
+        position = self.execution_client.get_position()
+        qty = None
+        pos_side = ""
+        if isinstance(position, Position):
+            qty = position.qty
+            pos_side = position.side.upper()
+        elif isinstance(position, dict):
+            qty = position.get("qty") or position.get("positionAmt")
+            pos_side = str(position.get("side", "")).upper()
+        if qty is None:
+            open_positions = self.execution_client.get_open_positions()
+            if open_positions:
+                qty = open_positions[0].get("qty") or open_positions[0].get("positionAmt")
+                pos_side = str(open_positions[0].get("side", "")).upper()
+        if qty is None:
+            self.logger.debug("No position qty found; skip close.")
+            return
+        qty = abs(float(qty))
+        if qty <= 0:
+            return
+        order_side = "SELL" if "LONG" in pos_side else "BUY"
+        client_order_id = self._make_client_order_id(self.config.symbol, order_side, timestamp)
+        trade = self._submit_order_with_retry(
+            symbol=self.config.symbol,
+            side=order_side,
+            qty=qty,
+            order_type="MARKET",
             price=price,
-            size=None,
-            timestamp=timestamp,
+            reduce_only=True,
+            client_order_id=client_order_id,
         )
         if trade and trade.get("pnl") is not None:
             self.daily_realized_pnl[day_key] += float(trade["pnl"])
@@ -335,18 +535,109 @@ class LiveEngine:
                 price,
                 trade["pnl"],
             )
+            self._refresh_positions()
+
+    def _refresh_positions(self) -> List[Dict[str, Any]]:
+        try:
+            raw_positions = self.execution_client.get_open_positions()
+        except Exception:
+            self.logger.exception("Failed to fetch open positions.")
+            raw_positions = []
+        normalized = self._normalize_positions(raw_positions)
+        self.open_positions = normalized
+        self._last_position_sync_iter = self.iteration
+        return normalized
+
+    def _normalize_positions(
+        self,
+        positions: Optional[List[Dict[str, Any]]],
+    ) -> List[Dict[str, Any]]:
+        normalized: List[Dict[str, Any]] = []
+        if not positions:
+            return normalized
+        for raw in positions:
+            if raw is None:
+                continue
+            symbol = str(raw.get("symbol", self.config.symbol))
+            qty_val = raw.get("qty")
+            side = raw.get("side")
+            entry_price = raw.get("entry_price")
+            if qty_val is None and raw.get("positionAmt") is not None:
+                try:
+                    amt = float(raw.get("positionAmt"))
+                except (TypeError, ValueError):
+                    amt = 0.0
+                if amt == 0:
+                    continue
+                side = "LONG" if amt > 0 else "SHORT"
+                qty = abs(amt)
+            else:
+                try:
+                    qty = float(qty_val)
+                except (TypeError, ValueError):
+                    qty = 0.0
+            if qty == 0:
+                continue
+            try:
+                entry_price = float(
+                    entry_price
+                    if entry_price not in (None, "")
+                    else raw.get("entryPrice", 0.0)
+                )
+            except (TypeError, ValueError):
+                entry_price = 0.0
+            pnl_val = raw.get("pnl", raw.get("unrealizedPnl"))
+            try:
+                pnl_val = float(pnl_val) if pnl_val is not None else 0.0
+            except (TypeError, ValueError):
+                pnl_val = 0.0
+            normalized.append(
+                {
+                    "symbol": symbol,
+                    "side": (side or "LONG").upper(),
+                    "qty": qty,
+                    "entry_price": entry_price,
+                    "pnl": pnl_val,
+                }
+            )
+        return normalized
+
+    def _current_notional(
+        self,
+        symbol: str,
+        positions: Optional[List[Dict[str, Any]]] = None,
+    ) -> float:
+        positions = positions if positions is not None else self.open_positions
+        total = 0.0
+        for pos in positions or []:
+            if str(pos.get("symbol")) != symbol:
+                continue
+            try:
+                qty = float(pos.get("qty", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                qty = 0.0
+            try:
+                entry_price = float(pos.get("entry_price", 0.0) or 0.0)
+            except (TypeError, ValueError):
+                entry_price = 0.0
+            total += abs(qty) * entry_price
+        return total
 
     def _write_snapshot(self, timestamp: pd.Timestamp) -> None:
         exec_state = self.execution_client.to_state_dict()
         portfolio = self.execution_client.get_portfolio()
-        day_key = timestamp.normalize() if timestamp is not None else None
+        last_ts = timestamp or self._last_bar_timestamp
+        day_key = last_ts.normalize() if last_ts is not None else None
+        last_bar_iso = last_ts.isoformat() if last_ts is not None else None
+        last_bar_ts = float(last_ts.timestamp()) if last_ts is not None else None
         snapshot = {
             "run_id": self.run_id,
             "symbol": self.config.symbol,
             "timeframe": self.config.timeframe,
             "strategy": self.strategy_name,
             "start_time": self.start_time.isoformat() if self.start_time else None,
-            "last_bar_time": timestamp.isoformat() if timestamp is not None else None,
+            "last_bar_time": last_bar_iso,
+            "last_bar_time_ts": last_bar_ts,
             "equity": portfolio.get("equity"),
             "realized_pnl": exec_state.get("realized_pnl"),
             "unrealized_pnl": exec_state.get("unrealized_pnl"),
@@ -361,6 +652,9 @@ class LiveEngine:
                 "executed_trades": self.executed_trades,
             },
             "requested_action": self.requested_action,
+            "data_source": self.data_source_name,
+            "stale_data_seconds": self.stale_data_seconds,
+            "ws_reconnect_count": self.ws_reconnect_count,
         }
         for target in {self.state_path, self.latest_state_path}:
             with target.open("w", encoding="utf-8") as fh:

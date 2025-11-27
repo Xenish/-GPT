@@ -20,12 +20,16 @@ def write_snapshot(run_id: str, filename: str) -> None:
         "strategy": "rule",
         "start_time": "2025-11-25T00:00:00Z",
         "last_bar_time": "2025-11-25T01:00:00Z",
+        "last_bar_time_ts": 1769350800.0,
         "equity": 10100.0,
         "realized_pnl": 100.0,
         "unrealized_pnl": 10.0,
         "daily_realized_pnl": 50.0,
         "open_positions": [],
         "risk_stats": {"blocked_entries": 0},
+        "data_source": "binance_ws",
+        "stale_data_seconds": 2.5,
+        "ws_reconnect_count": 1,
     }
     target = LIVE_DIR / filename
     target.write_text(__import__("json").dumps(payload), encoding="utf-8")
@@ -39,6 +43,10 @@ def test_live_status_default_snapshot(tmp_path):
     data = resp.json()
     assert data["run_id"] == run_id
     assert data["equity"] == 10100.0
+    assert data["data_source"] == "binance_ws"
+    assert data["stale_data_seconds"] == 2.5
+    assert data["ws_reconnect_count"] == 1
+    assert data["last_bar_time_ts"] == 1769350800.0
 
 
 def test_live_status_specific_run():

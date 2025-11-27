@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 
 import pandas as pd
 
@@ -72,6 +72,9 @@ class RiskEngine:
         price: float,
         atr: Optional[float] = None,
         row: Optional[pd.Series] = None,
+        *,
+        current_notional: float = 0.0,
+        max_position_notional: Optional[float] = None,
     ) -> float:
         if equity <= 0 or price <= 0:
             return 0.0
@@ -107,6 +110,12 @@ class RiskEngine:
         if self.config.max_notional_per_symbol:
             max_size = self.config.max_notional_per_symbol / price
             final_size = min(final_size, max_size)
+
+        if max_position_notional is not None:
+            remaining = float(max_position_notional) - float(current_notional or 0.0)
+            if remaining <= 0:
+                return 0.0
+            final_size = min(final_size, remaining / price)
 
         return max(final_size, 0.0)
 

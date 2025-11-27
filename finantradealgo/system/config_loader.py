@@ -4,7 +4,7 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, List
-
+import os
 import yaml
 
 
@@ -26,12 +26,19 @@ class PaperConfig:
 @dataclass
 class LiveConfig:
     mode: str = "replay"
+    data_source: str = "replay"
     exchange: str = "binance_futures"
     symbol: str = "BTCUSDT"
+    symbols: List[str] = field(default_factory=list)
     timeframe: str = "15m"
     ws_enabled: bool = False
     rest_poll_sec: int = 10
     max_concurrent_positions: int = 1
+    max_position_notional: float = 100.0
+    max_daily_loss: float = 20.0
+    max_open_trades: int = 1
+    order_retry_limit: int = 3
+    order_timeout_seconds: int = 5
     log_dir: str = "outputs/live_logs"
     log_level: str = "INFO"
     state_dir: str = "outputs/live"
@@ -39,6 +46,13 @@ class LiveConfig:
     latest_state_path: Optional[str] = "outputs/live/live_state.json"
     replay: ReplayConfig = field(default_factory=ReplayConfig)
     paper: PaperConfig = field(default_factory=PaperConfig)
+    ws_use_1m_stream: bool = True
+    ws_aggregate_to_tf: str = "15m"
+    ws_resync_lookback_bars: int = 200
+    ws_max_stale_seconds: int = 30
+    ws_max_ws_reconnects: int = 10
+    execution_allow_market_orders: bool = True
+    execution_allow_limit_orders: bool = True
 
     @classmethod
     def from_dict(
@@ -50,6 +64,12 @@ class LiveConfig:
     ) -> "LiveConfig":
         data = data or {}
         symbol = data.get("symbol", default_symbol or cls.symbol)
+        raw_symbols = data.get("symbols")
+        symbols = [str(s) for s in raw_symbols] if raw_symbols else []
+        if not symbols:
+            symbols = [symbol]
+        if symbol not in symbols:
+            symbol = symbols[0]
         timeframe = data.get("timeframe", default_timeframe or cls.timeframe)
 
         replay_section = data.get("replay", {}) or {}
@@ -75,15 +95,31 @@ class LiveConfig:
             output_dir=paper_section.get("output_dir", PaperConfig.output_dir),
         )
 
+        ws_section = data.get("ws", {}) or {}
+        exec_section = data.get("execution", {}) or {}
+
         return cls(
             mode=data.get("mode", cls.mode),
+            data_source=data.get("data_source", cls.data_source),
             exchange=data.get("exchange", cls.exchange),
             symbol=symbol,
+            symbols=symbols,
             timeframe=timeframe,
             ws_enabled=bool(data.get("ws_enabled", cls.ws_enabled)),
             rest_poll_sec=int(data.get("rest_poll_sec", cls.rest_poll_sec)),
             max_concurrent_positions=int(
                 data.get("max_concurrent_positions", cls.max_concurrent_positions)
+            ),
+            max_position_notional=float(
+                data.get("max_position_notional", cls.max_position_notional)
+            ),
+            max_daily_loss=float(data.get("max_daily_loss", cls.max_daily_loss)),
+            max_open_trades=int(data.get("max_open_trades", cls.max_open_trades)),
+            order_retry_limit=int(
+                data.get("order_retry_limit", cls.order_retry_limit)
+            ),
+            order_timeout_seconds=int(
+                data.get("order_timeout_seconds", cls.order_timeout_seconds)
             ),
             log_dir=data.get("log_dir", cls.log_dir),
             log_level=str(data.get("log_level", cls.log_level)).upper(),
@@ -92,6 +128,25 @@ class LiveConfig:
             latest_state_path=data.get("latest_state_path", cls.latest_state_path),
             replay=replay_cfg,
             paper=paper_cfg,
+            ws_use_1m_stream=bool(ws_section.get("use_1m_stream", cls.ws_use_1m_stream)),
+            ws_aggregate_to_tf=ws_section.get("aggregate_to_tf", cls.ws_aggregate_to_tf),
+            ws_resync_lookback_bars=int(
+                ws_section.get("resync_lookback_bars", cls.ws_resync_lookback_bars)
+            ),
+            ws_max_stale_seconds=int(
+                ws_section.get("max_stale_seconds", cls.ws_max_stale_seconds)
+            ),
+            ws_max_ws_reconnects=int(
+                ws_section.get("max_ws_reconnects", cls.ws_max_ws_reconnects)
+            ),
+            execution_allow_market_orders=bool(
+                exec_section.get(
+                    "allow_market_orders", cls.execution_allow_market_orders
+                )
+            ),
+            execution_allow_limit_orders=bool(
+                exec_section.get("allow_limit_orders", cls.execution_allow_limit_orders)
+            ),
         )
 
 
@@ -132,6 +187,23 @@ class PortfolioConfig:
 DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
     "symbol": "BTCUSDT",
     "timeframe": "15m",
+    "exchange": {
+        "name": "binance_futures",
+        "testnet": True,
+        "base_url_rest": "https://fapi.binance.com",
+        "base_url_rest_testnet": "https://testnet.binancefuture.com",
+        "base_url_ws": "wss://fstream.binance.com",
+        "base_url_ws_testnet": "wss://stream.binancefuture.com",
+        "api_key_env": "BINANCE_FUTURES_API_KEY",
+        "secret_key_env": "BINANCE_FUTURES_API_SECRET",
+        "recv_window_ms": 5000,
+        "time_sync": True,
+        "max_time_skew_ms": 1000,
+        "symbol_mapping": {},
+        "default_leverage": 5,
+        "position_mode": "one_way",
+        "dry_run": True,
+    },
     "data": {
         "ohlcv_dir": "data/ohlcv",
         "external_dir": "data/external",
@@ -237,12 +309,19 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
     },
     "live": {
         "mode": "replay",
+        "data_source": "replay",
         "exchange": "binance_futures",
         "symbol": "BTCUSDT",
+        "symbols": ["BTCUSDT"],
         "timeframe": "15m",
         "ws_enabled": False,
         "rest_poll_sec": 10,
         "max_concurrent_positions": 1,
+        "max_position_notional": 100.0,
+        "max_daily_loss": 20.0,
+        "max_open_trades": 1,
+        "order_retry_limit": 3,
+        "order_timeout_seconds": 5,
         "log_dir": "outputs/live_logs",
         "log_level": "INFO",
         "state_dir": "outputs/live",
@@ -259,8 +338,68 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
             "state_path": "outputs/live_state/paper_state.json",
             "output_dir": "outputs/live_paper",
         },
+        "execution": {
+            "allow_market_orders": True,
+            "allow_limit_orders": True,
+        },
+        "ws": {
+            "use_1m_stream": True,
+            "aggregate_to_tf": "15m",
+            "resync_lookback_bars": 200,
+            "max_stale_seconds": 30,
+            "max_ws_reconnects": 10,
+        },
     },
 }
+
+
+@dataclass
+class ExchangeConfig:
+    name: str = "binance_futures"
+    testnet: bool = True
+    base_url_rest: str = "https://fapi.binance.com"
+    base_url_rest_testnet: str = "https://testnet.binancefuture.com"
+    base_url_ws: str = "wss://fstream.binance.com"
+    base_url_ws_testnet: str = "wss://stream.binancefuture.com"
+    api_key_env: str = "BINANCE_FUTURES_API_KEY"
+    secret_key_env: str = "BINANCE_FUTURES_API_SECRET"
+    recv_window_ms: int = 5000
+    time_sync: bool = True
+    max_time_skew_ms: int = 1000
+    symbol_mapping: Dict[str, str] = field(default_factory=dict)
+    default_leverage: int = 5
+    position_mode: str = "one_way"
+    dry_run: bool = True
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ExchangeConfig":
+        data = data or {}
+        mapping = data.get("symbol_mapping", {}) or {}
+        return cls(
+            name=data.get("name", cls.name),
+            testnet=bool(data.get("testnet", cls.testnet)),
+            base_url_rest=data.get("base_url_rest", cls.base_url_rest),
+            base_url_rest_testnet=data.get(
+                "base_url_rest_testnet", cls.base_url_rest_testnet
+            ),
+            base_url_ws=data.get("base_url_ws", cls.base_url_ws),
+            base_url_ws_testnet=data.get(
+                "base_url_ws_testnet", cls.base_url_ws_testnet
+            ),
+            api_key_env=data.get("api_key_env", cls.api_key_env),
+            secret_key_env=data.get("secret_key_env", cls.secret_key_env),
+            recv_window_ms=int(data.get("recv_window_ms", cls.recv_window_ms)),
+            time_sync=bool(data.get("time_sync", cls.time_sync)),
+            max_time_skew_ms=int(
+                data.get("max_time_skew_ms", cls.max_time_skew_ms)
+            ),
+            symbol_mapping={str(k): str(v) for k, v in mapping.items()},
+            default_leverage=int(
+                data.get("default_leverage", cls.default_leverage)
+            ),
+            position_mode=data.get("position_mode", cls.position_mode),
+            dry_run=bool(data.get("dry_run", cls.dry_run)),
+        )
 
 
 def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any]:
@@ -291,7 +430,32 @@ def load_system_config(path: str = "config/system.yml") -> Dict[str, Any]:
 
     merged = _deep_merge(DEFAULT_SYSTEM_CONFIG, user_cfg)
     merged["portfolio_cfg"] = PortfolioConfig.from_dict(merged.get("portfolio", {}))
+    merged["exchange_cfg"] = ExchangeConfig.from_dict(merged.get("exchange", {}))
+    merged["live_cfg"] = LiveConfig.from_dict(
+        merged.get("live"),
+        default_symbol=merged.get("symbol"),
+        default_timeframe=merged.get("timeframe"),
+    )
     return merged
 
 
-__all__ = ["load_system_config", "LiveConfig", "ReplayConfig", "PaperConfig", "PortfolioConfig"]
+def load_exchange_credentials(cfg: ExchangeConfig) -> tuple[str, str]:
+    api_key = os.getenv(cfg.api_key_env, "").strip()
+    secret_key = os.getenv(cfg.secret_key_env, "").strip()
+    if not api_key or not secret_key:
+        raise RuntimeError(
+            f"Exchange API keys not found in environment variables "
+            f"{cfg.api_key_env}/{cfg.secret_key_env}"
+        )
+    return api_key, secret_key
+
+
+__all__ = [
+    "load_system_config",
+    "LiveConfig",
+    "ReplayConfig",
+    "PaperConfig",
+    "PortfolioConfig",
+    "ExchangeConfig",
+    "load_exchange_credentials",
+]

@@ -1,0 +1,2 @@
+[console_scripts]
+finantrade = finantradealgo.system.cli:main

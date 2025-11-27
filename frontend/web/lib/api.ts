@@ -1,6 +1,17 @@
 import axios, { AxiosError } from "axios";
 
-const API_BASE = "http://localhost:8000";
+function getApiBaseUrl() {
+  const env = process.env.NEXT_PUBLIC_API_BASE_URL;
+  if (env && env.trim().length > 0) {
+    return env.replace(/\/+$/, "");
+  }
+  return "http://localhost:8000";
+}
+
+const apiBase = getApiBaseUrl();
+const api = axios.create({
+  baseURL: `${apiBase}/api`,
+});
 
 export async function fetchChart(
   symbol: string,
@@ -11,7 +22,7 @@ export async function fetchChart(
   meta: Record<string, any>;
 }> {
   const params = runId ? { run_id: runId } : undefined;
-  const res = await axios.get(`${API_BASE}/api/chart/${symbol}/${timeframe}`, {
+  const res = await api.get(`/chart/${symbol}/${timeframe}`, {
     params,
   });
   return {
@@ -24,8 +35,7 @@ export async function fetchSummary(
   symbol: string,
   timeframe: string
 ): Promise<Record<string, number>> {
-  const url = `${API_BASE}/api/summary/${symbol}/${timeframe}`;
-  const res = await axios.get(url);
+  const res = await api.get(`/summary/${symbol}/${timeframe}`);
   return res.data as Record<string, number>;
 }
 
@@ -35,15 +45,12 @@ export async function fetchBacktests(
   strategy?: string
 ): Promise<any[]> {
   const params = strategy ? { strategy } : undefined;
-  const res = await axios.get(
-    `${API_BASE}/api/backtests/${symbol}/${timeframe}`,
-    { params }
-  );
+  const res = await api.get(`/backtests/${symbol}/${timeframe}`, { params });
   return res.data as any[];
 }
 
 export async function fetchTrades(runId: string): Promise<any[]> {
-  const res = await axios.get(`${API_BASE}/api/trades/${runId}`);
+  const res = await api.get(`/trades/${runId}`);
   return res.data as any[];
 }
 
@@ -52,7 +59,7 @@ export async function fetchLiveStatus(
 ): Promise<any | null> {
   try {
     const params = runId ? { run_id: runId } : undefined;
-    const res = await axios.get(`${API_BASE}/api/live/status`, { params });
+    const res = await api.get(`/live/status`, { params });
     return res.data as any;
   } catch (err) {
     if (axios.isAxiosError(err) && err.response?.status === 404) {
@@ -77,7 +84,7 @@ export async function runBacktest(
   metrics: Record<string, number>;
   trade_count: number;
 }> {
-  const res = await axios.post(`${API_BASE}/api/backtests/run`, body);
+  const res = await api.post(`/backtests/run`, body);
   return res.data as {
     run_id: string;
     symbol: string;
@@ -94,7 +101,7 @@ export async function getMeta(): Promise<{
   strategies: string[];
   scenario_presets: string[];
 }> {
-  const res = await axios.get(`${API_BASE}/api/meta`);
+  const res = await api.get(`/meta`);
   return res.data;
 }
 
@@ -112,7 +119,7 @@ export async function runScenarios(body: {
     trade_count: number | null;
   }[];
 }> {
-  const res = await axios.post(`${API_BASE}/api/scenarios/run`, body);
+  const res = await api.post(`/scenarios/run`, body);
   return res.data;
 }
 
@@ -126,25 +133,25 @@ export async function getPortfolioBacktests(): Promise<
     metrics: Record<string, number | null>;
   }[]
 > {
-  const res = await axios.get(`${API_BASE}/api/portfolio/backtests`);
+  const res = await api.get(`/portfolio/backtests`);
   return res.data;
 }
 
 export async function getPortfolioEquity(
   runId: string
 ): Promise<{ time: number; portfolio_equity: number }[]> {
-  const res = await axios.get(`${API_BASE}/api/portfolio/equity/${runId}`);
+  const res = await api.get(`/portfolio/equity/${runId}`);
   return res.data;
 }
 
 export async function getLiveStatus(runId?: string) {
   const params = runId ? { run_id: runId } : undefined;
-  const res = await axios.get(`${API_BASE}/api/live/status`, { params });
+  const res = await api.get(`/live/status`, { params });
   return res.data;
 }
 
 export async function sendLiveControl(body: { command: string; run_id?: string }) {
-  const res = await axios.post(`${API_BASE}/api/live/control`, body);
+  const res = await api.post(`/live/control`, body);
   return res.data;
 }
 
@@ -159,7 +166,7 @@ export type ScenarioResult = {
 };
 
 export async function getScenarioResults(symbol: string, timeframe: string) {
-  const res = await axios.get(`${API_BASE}/api/scenarios/${symbol}/${timeframe}`);
+  const res = await api.get(`/scenarios/${symbol}/${timeframe}`);
   return res.data as ScenarioResult[];
 }
 
@@ -178,12 +185,12 @@ export type FeatureImportanceItem = {
 };
 
 export async function getMlModels(symbol: string, timeframe: string) {
-  const res = await axios.get(`${API_BASE}/api/ml/models/${symbol}/${timeframe}`);
+  const res = await api.get(`/ml/models/${symbol}/${timeframe}`);
   return res.data as ModelInfo[];
 }
 
 export async function getFeatureImportance(modelId: string) {
-  const res = await axios.get(`${API_BASE}/api/ml/models/${modelId}/importance`);
+  const res = await api.get(`/ml/models/${modelId}/importance`);
   const raw = (res.data ?? {}) as Record<string, number>;
   return Object.entries(raw).map(([name, value]) => ({
     name,

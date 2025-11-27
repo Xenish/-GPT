@@ -47,9 +47,9 @@ def test_file_replay_iterates_rows():
     source = FileReplayDataSource(df, bars_limit=3)
     source.connect()
     rows = [source.next_bar() for _ in range(4)]
-    assert rows[0]["timestamp"] == df.iloc[0]["timestamp"]
-    assert rows[1]["timestamp"] == df.iloc[1]["timestamp"]
-    assert rows[2]["timestamp"] == df.iloc[2]["timestamp"]
+    assert rows[0].close_time == pd.to_datetime(df.iloc[0]["timestamp"])
+    assert rows[1].close_time == pd.to_datetime(df.iloc[1]["timestamp"])
+    assert rows[2].close_time == pd.to_datetime(df.iloc[2]["timestamp"])
     assert rows[3] is None
 
 
@@ -61,10 +61,12 @@ def test_paper_execution_client_long_close(tmp_path):
         output_dir=str(tmp_path / "paper"),
     )
     ts = pd.Timestamp("2025-01-01 00:00:00")
-    client.submit_order("LONG", price=100.0, size=1.0, timestamp=ts)
+    client.mark_to_market(100.0, ts)
+    client.submit_order("TEST", "BUY", 1.0, "MARKET", price=100.0)
     assert client.has_position()
     close_ts = ts + pd.Timedelta(minutes=15)
-    trade = client.submit_order("CLOSE", price=110.0, size=None, timestamp=close_ts)
+    client.mark_to_market(110.0, close_ts)
+    trade = client.submit_order("TEST", "SELL", 1.0, "MARKET", price=110.0, reduce_only=True)
     assert trade is not None
     assert trade["pnl"] == pytest.approx(10.0)
     snapshot = client.get_portfolio()
@@ -96,6 +98,15 @@ def _build_live_config(tmp_path, bars: int) -> LiveConfig:
     )
 
 
+def _system_cfg_from_live(live_cfg: LiveConfig) -> dict:
+    return {
+        "symbol": live_cfg.symbol,
+        "timeframe": live_cfg.timeframe,
+        "live": {},
+        "live_cfg": live_cfg,
+    }
+
+
 def test_live_engine_replay_executes_trades(tmp_path):
     df = _dummy_df(rows=4)
     strategy = PingPongStrategy()
@@ -111,8 +122,9 @@ def test_live_engine_replay_executes_trades(tmp_path):
         output_dir=live_cfg.paper.output_dir,
         state_path=live_cfg.paper.state_path,
     )
+    system_cfg = _system_cfg_from_live(live_cfg)
     engine = LiveEngine(
-        config=live_cfg,
+        system_cfg=system_cfg,
         data_source=data_source,
         strategy=strategy,
         risk_engine=risk_engine,
@@ -157,8 +169,9 @@ def test_live_engine_single_trade_profit(tmp_path):
         output_dir=live_cfg.paper.output_dir,
         state_path=live_cfg.paper.state_path,
     )
+    system_cfg = _system_cfg_from_live(live_cfg)
     engine = LiveEngine(
-        config=live_cfg,
+        system_cfg=system_cfg,
         data_source=data_source,
         strategy=strategy,
         risk_engine=risk_engine,
@@ -209,8 +222,9 @@ def test_live_engine_risk_blocks_after_loss(tmp_path):
         output_dir=live_cfg.paper.output_dir,
         state_path=live_cfg.paper.state_path,
     )
+    system_cfg = _system_cfg_from_live(live_cfg)
     engine = LiveEngine(
-        config=live_cfg,
+        system_cfg=system_cfg,
         data_source=data_source,
         strategy=strategy,
         risk_engine=risk_engine,

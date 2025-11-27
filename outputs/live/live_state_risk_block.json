@@ -3,8 +3,9 @@
   "symbol": "TEST",
   "timeframe": "15m",
   "strategy": "unknown",
-  "start_time": "2025-11-25T23:27:43.901283+00:00",
-  "last_bar_time": "2025-11-25T23:27:43.905398+00:00",
+  "start_time": "2025-11-27T14:23:24.695533+00:00",
+  "last_bar_time": "2025-11-27T14:23:24.745874+00:00",
+  "last_bar_time_ts": 1764253404.745874,
   "equity": 4750.0,
   "realized_pnl": -250.0,
   "unrealized_pnl": 0.0,
@@ -13,5 +14,9 @@
   "risk_stats": {
     "blocked_entries": 4,
     "executed_trades": 1
-  }
+  },
+  "requested_action": null,
+  "data_source": "replay",
+  "stale_data_seconds": 28559304.73695755,
+  "ws_reconnect_count": 0
 }

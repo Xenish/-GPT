@@ -7,9 +7,10 @@ from typing import Any, Dict, List, Optional
 import pandas as pd
 
 from finantradealgo.core.portfolio import Portfolio, Position
+from .client_base import ExecutionClientBase
 
 
-class PaperExecutionClient:
+class PaperExecutionClient(ExecutionClientBase):
     """
     Minimal execution adapter that mimics live trading using an in-memory
     portfolio. It accepts signals from the live engine and records fills
@@ -116,22 +117,69 @@ class PaperExecutionClient:
     # --------------
     def submit_order(
         self,
+        symbol: str,
         side: str,
+        qty: float,
+        order_type: str,
         *,
-        price: float,
-        size: Optional[float],
-        timestamp,
+        price: Optional[float] = None,
+        reduce_only: bool = False,
+        client_order_id: Optional[str] = None,
+        **_: Any,
     ) -> Optional[Dict]:
-        if side not in {"LONG", "SHORT", "CLOSE"}:
-            return None
+        side = side.upper()
+        order_type = order_type.upper()
+        if order_type != "MARKET":
+            raise ValueError("Paper client only supports MARKET orders.")
 
-        if side in {"LONG", "SHORT"}:
-            if size is None or size <= 0:
-                return None
-            return self._open_position(side=side, price=price, size=size, timestamp=timestamp)
-        if side == "CLOSE":
-            return self._close_position(price=price, timestamp=timestamp, reason="MANUAL_CLOSE")
+        trade_price = price if price is not None else self._last_price
+        if trade_price is None:
+            raise ValueError("Price required for paper fills.")
+        timestamp = self._last_timestamp or pd.Timestamp.utcnow()
+
+        if reduce_only:
+            trade = self._close_position(
+                price=trade_price,
+                timestamp=timestamp,
+                reason="REDUCE_ONLY",
+            )
+            if trade is not None:
+                trade["client_order_id"] = client_order_id
+            return trade
+
+        current = self.portfolio.position
+        if current is not None:
+            if current.side == "LONG" and side == "SELL":
+                return self._close_position(
+                    price=trade_price,
+                    timestamp=timestamp,
+                    reason="OPPOSITE_SIGNAL",
+                )
+            if current.side == "SHORT" and side == "BUY":
+                return self._close_position(
+                    price=trade_price,
+                    timestamp=timestamp,
+                    reason="OPPOSITE_SIGNAL",
+                )
+
+        if qty is None or qty <= 0:
+            return None
+        mapped_side = "LONG" if side == "BUY" else "SHORT"
+        trade = self._open_position(
+            side=mapped_side,
+            price=trade_price,
+            size=qty,
+            timestamp=timestamp,
+        )
+        if trade is not None:
+            trade["client_order_id"] = client_order_id
+        return trade
+
+    def cancel_order(self, symbol: str, order_id: str | int) -> None:
         return None
+
+    def get_open_orders(self, symbol: Optional[str] = None) -> List[Dict[str, Any]]:
+        return []
 
     def _open_position(self, *, side: str, price: float, size: float, timestamp) -> Optional[Dict]:
         if self.portfolio.position is not None:

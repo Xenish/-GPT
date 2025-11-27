@@ -65,23 +65,35 @@ class DummyExec:
     def get_position(self):
         return None
 
-    def submit_order(self, *args, **kwargs):
+    def submit_order(self, symbol, side, qty, order_type, **kwargs):
         return None
 
     def export_logs(self, timeframe: str):
         return {"equity": Path("equity.csv"), "trades": Path("trades.csv")}
 
 
+def _make_system_cfg(live_cfg: LiveConfig | None = None) -> dict:
+    cfg = live_cfg or LiveConfig()
+    return {
+        "symbol": cfg.symbol,
+        "timeframe": cfg.timeframe,
+        "live": {},
+        "live_cfg": cfg,
+    }
+
+
 def test_flatten_all_removes_positions(tmp_path):
     exec_client = DummyExec(
         positions=[{"symbol": "AIAUSDT", "side": "long", "qty": 1.0, "entry_price": 10.0}]
     )
+    system_cfg = _make_system_cfg()
     engine = LiveEngine(
-        config=LiveConfig(),
+        system_cfg=system_cfg,
         data_source=DummyDataSource(),
         strategy=DummyStrategy(),
         risk_engine=DummyRisk(),
         execution_client=exec_client,
+        run_id="test",
     )
     engine.flatten_all()
     assert exec_client.positions == []
@@ -129,6 +141,9 @@ def test_live_status_and_control(client):
         "unrealized_pnl": 0,
         "daily_realized_pnl": 0,
         "open_positions": [],
+        "data_source": "replay",
+        "stale_data_seconds": None,
+        "ws_reconnect_count": 0,
     }
     state_path.write_text(json.dumps(snapshot), encoding="utf-8")
 

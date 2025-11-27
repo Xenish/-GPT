@@ -10,3 +10,4 @@ fastapi
 uvicorn[standard]
 pydantic>=2.0
 click>=8.0
+websocket-client

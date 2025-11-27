@@ -1,6 +1,25 @@
 symbol: "AIAUSDT"
 timeframe: "15m"
 
+exchange:
+  name: "binance_futures"
+  testnet: true
+  base_url_rest: "https://fapi.binance.com"
+  base_url_rest_testnet: "https://testnet.binancefuture.com"
+  base_url_ws: "wss://fstream.binance.com"
+  base_url_ws_testnet: "wss://stream.binancefuture.com"
+  api_key_env: "BINANCE_FUTURES_API_KEY"
+  secret_key_env: "BINANCE_FUTURES_API_SECRET"
+  recv_window_ms: 5000
+  time_sync: true
+  max_time_skew_ms: 1000
+  symbol_mapping:
+    AIAUSDT: "AIAUSDT"
+    BTCUSDT: "BTCUSDT"
+  default_leverage: 5
+  position_mode: "one_way"
+  dry_run: true
+
 data:
   ohlcv_dir: "data/ohlcv"
   external_dir: "data/external"
@@ -100,13 +119,21 @@ strategy:
   volatility_breakout: {}
 
 live:
-  mode: "replay"
+  mode: "paper"               # "paper" | "exchange"
+  symbols:
+    - "AIAUSDT"
+  data_source: "replay"       # "replay" | "binance_ws"
   exchange: "binance_futures"
   symbol: "AIAUSDT"
   timeframe: "15m"
   ws_enabled: false
   rest_poll_sec: 5
   max_concurrent_positions: 1
+  max_position_notional: 100.0
+  max_daily_loss: 20.0
+  max_open_trades: 3
+  order_retry_limit: 3
+  order_timeout_seconds: 5
   log_dir: "outputs/live_logs"
   log_level: "INFO"
   replay:
@@ -118,6 +145,15 @@ live:
     save_state_every_n_bars: 25
     state_path: "outputs/live_state/paper_state.json"
     output_dir: "outputs/live_paper"
+  execution:
+    allow_market_orders: true
+    allow_limit_orders: true
+  ws:
+    use_1m_stream: true
+    aggregate_to_tf: "15m"
+    resync_lookback_bars: 200
+    max_stale_seconds: 30
+    max_ws_reconnects: 10
 
 scenario:
   presets:

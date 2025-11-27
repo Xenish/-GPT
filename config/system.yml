@@ -5,12 +5,21 @@ data:
   ohlcv_dir: "data/ohlcv"
   external_dir: "data/external"
   features_dir: "data/features"
+  flow_dir: "data/flow"
+  sentiment_dir: "data/sentiment"
 
 features:
+  use_base: true
+  use_ta: true
+  use_candles: true
+  use_osc: true
   use_htf: true
   use_microstructure: true
   use_market_structure: true
   use_external: true
+  use_rule_signals: true
+  use_flow_features: true
+  use_sentiment_features: true
   drop_na: true
   feature_preset: "extended"
 

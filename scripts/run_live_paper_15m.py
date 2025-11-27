@@ -3,7 +3,7 @@ from __future__ import annotations
 import sys
 from datetime import datetime
 from pathlib import Path
-from typing import Tuple
+from typing import Optional, Tuple
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -40,17 +40,27 @@ def build_run_id(symbol: str, timeframe: str) -> str:
     return f"{symbol}_{timeframe}_{ts}"
 
 
-def main() -> None:
+def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
     cfg = load_system_config()
+    cfg_local = dict(cfg)
+    live_section = dict(cfg_local.get("live", {}) or {})
+    if symbol:
+        cfg_local["symbol"] = symbol
+        live_section["symbol"] = symbol
+    if timeframe:
+        cfg_local["timeframe"] = timeframe
+        live_section["timeframe"] = timeframe
+    cfg_local["live"] = live_section
+
     live_cfg = LiveConfig.from_dict(
-        cfg.get("live"),
-        default_symbol=cfg.get("symbol"),
-        default_timeframe=cfg.get("timeframe"),
+        live_section,
+        default_symbol=cfg_local.get("symbol"),
+        default_timeframe=cfg_local.get("timeframe"),
     )
 
-    df_features, meta = build_feature_pipeline_from_system_config(cfg)
-    strategy_type, strategy = build_strategy(cfg, df_features)
-    risk_engine = RiskEngine(RiskConfig.from_dict(cfg.get("risk", {})))
+    df_features, meta = build_feature_pipeline_from_system_config(cfg_local)
+    strategy_type, strategy = build_strategy(cfg_local, df_features)
+    risk_engine = RiskEngine(RiskConfig.from_dict(cfg_local.get("risk", {})))
 
     data_source = FileReplayDataSource(
         df_features,

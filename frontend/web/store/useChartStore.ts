@@ -6,10 +6,15 @@ import {
   fetchTrades,
   runBacktest as runBacktestApi,
   getMeta,
-  runScenarios,
   getPortfolioBacktests,
   getPortfolioEquity,
+  getLiveStatus,
+  sendLiveControl,
+  getScenarioResults,
+  getMlModels,
+  getFeatureImportance,
 } from "@/lib/api";
+import type { ScenarioResult, ModelInfo, FeatureImportanceItem } from "@/lib/api";
 
 export type BarPoint = {
   time: number;
@@ -97,7 +102,6 @@ type ChartState = {
   symbol: string;
   timeframe: string;
   strategies: string[];
-  availableScenarioPresets: string[];
   selectedStrategy: string;
   backtests: BacktestRunInfo[];
   selectedRunId: string | null;
@@ -122,16 +126,16 @@ type ChartState = {
     ms_trend_max?: number;
     use_ms_chop_filter?: boolean;
   };
-  scenarioPreset: string;
-  scenarioResults: {
-    label: string;
-    strategy: string;
-    cum_return: number | null;
-    sharpe: number | null;
-    trade_count: number | null;
-  }[];
-  isRunningScenario: boolean;
+  scenarioResults: ScenarioResult[];
+  selectedScenarioId: string | null;
+  isLoadingScenarios: boolean;
   scenarioError: string | null;
+  mlModels: ModelInfo[];
+  selectedModelId: string | null;
+  featureImportance: FeatureImportanceItem[];
+  isLoadingMlModels: boolean;
+  isLoadingFeatureImportance: boolean;
+  mlError: string | null;
   portfolioRuns: {
     run_id: string;
     symbols: string[];
@@ -171,11 +175,14 @@ type ChartState = {
   setLastRunId: (id?: string) => void;
   initMeta: () => Promise<void>;
   setRuleParams: (partial: Partial<ChartState["ruleParams"]>) => void;
-  runScenarioPreset: (preset?: string) => Promise<void>;
   fetchPortfolioRuns: () => Promise<void>;
   fetchPortfolioEquity: (runId: string) => Promise<void>;
   fetchLiveStatus: () => Promise<void>;
   sendLiveCommand: (command: "pause" | "resume" | "stop" | "flatten") => Promise<void>;
+  fetchScenarioResults: (symbol?: string, timeframe?: string) => Promise<void>;
+  setSelectedScenarioId: (id: string | null) => void;
+  fetchMlModels: (symbol?: string, timeframe?: string) => Promise<void>;
+  selectModel: (modelId: string) => Promise<void>;
   runBacktest: () => Promise<void>;
 };
 
@@ -183,7 +190,6 @@ export const useChartStore = create<ChartState>((set, get) => ({
   symbol: "AIAUSDT",
   timeframe: "15m",
   strategies: ["rule", "ml"],
-  availableScenarioPresets: [],
   selectedStrategy: "rule",
   backtests: [],
   selectedRunId: null,
@@ -204,10 +210,16 @@ export const useChartStore = create<ChartState>((set, get) => ({
   availableTimeframes: [],
   availableStrategies: [],
   ruleParams: {},
-  scenarioPreset: "core_15m",
   scenarioResults: [],
-  isRunningScenario: false,
+  selectedScenarioId: null,
+  isLoadingScenarios: false,
   scenarioError: null,
+  mlModels: [],
+  selectedModelId: null,
+  featureImportance: [],
+  isLoadingMlModels: false,
+  isLoadingFeatureImportance: false,
+  mlError: null,
   portfolioRuns: [],
   selectedPortfolioRunId: null,
   portfolioEquity: [],
@@ -254,20 +266,14 @@ export const useChartStore = create<ChartState>((set, get) => ({
       const strategy = data.strategies.includes(state.selectedStrategy)
         ? state.selectedStrategy
         : data.strategies[0];
-      const scenarioPreset =
-        data.scenario_presets && data.scenario_presets.length > 0
-          ? data.scenario_presets[0]
-          : state.scenarioPreset;
       return {
         availableSymbols: data.symbols,
         availableTimeframes: data.timeframes,
         availableStrategies: data.strategies,
-        availableScenarioPresets: data.scenario_presets,
         symbol,
         timeframe,
         strategies: data.strategies,
         selectedStrategy: strategy,
-        scenarioPreset,
       };
     });
   },
@@ -275,22 +281,77 @@ export const useChartStore = create<ChartState>((set, get) => ({
     set((state) => ({
       ruleParams: { ...state.ruleParams, ...partial },
     })),
-  runScenarioPreset: async (preset) => {
-    const { symbol, timeframe, scenarioPreset } = get();
-    const targetPreset = preset || scenarioPreset;
-    set({ isRunningScenario: true, scenarioError: null });
+  fetchScenarioResults: async (symbolOverride, timeframeOverride) => {
+    const state = get();
+    const symbol = symbolOverride ?? state.symbol;
+    const timeframe = timeframeOverride ?? state.timeframe;
+    set({ isLoadingScenarios: true, scenarioError: null });
     try {
-      const res = await runScenarios({
-        symbol,
-        timeframe,
-        preset_name: targetPreset,
+      const results = await getScenarioResults(symbol, timeframe);
+      set({
+        scenarioResults: results,
+        selectedScenarioId: results.length > 0 ? results[0].scenario_id : null,
       });
-      set({ scenarioResults: res.rows, scenarioPreset: res.preset_name });
     } catch (err: any) {
-      const detail = err?.response?.data?.detail ?? err?.message ?? "Scenario run failed";
-      set({ scenarioError: detail });
+      const msg = err?.response?.data?.detail ?? err?.message ?? "Failed to load scenario results";
+      set({ scenarioError: msg, scenarioResults: [], selectedScenarioId: null });
     } finally {
-      set({ isRunningScenario: false });
+      set({ isLoadingScenarios: false });
+    }
+  },
+  setSelectedScenarioId: (id) => set({ selectedScenarioId: id }),
+  fetchMlModels: async (symbolOverride, timeframeOverride) => {
+    const state = get();
+    const symbol = symbolOverride ?? state.symbol;
+    const timeframe = timeframeOverride ?? state.timeframe;
+    set({ isLoadingMlModels: true, mlError: null });
+    try {
+      const models = await getMlModels(symbol, timeframe);
+      set({
+        mlModels: models,
+        selectedModelId: models.length > 0 ? models[0].model_id : null,
+        featureImportance: [],
+      });
+      if (models.length > 0) {
+        await get().selectModel(models[0].model_id);
+      }
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail ?? err?.message ?? "Failed to load ML models";
+      set({
+        mlError: msg,
+        mlModels: [],
+        selectedModelId: null,
+        featureImportance: [],
+      });
+    } finally {
+      set({ isLoadingMlModels: false });
+    }
+  },
+  selectModel: async (modelId: string) => {
+    if (!modelId) {
+      set({ selectedModelId: null, featureImportance: [] });
+      return;
+    }
+    set({
+      selectedModelId: modelId,
+      isLoadingFeatureImportance: true,
+      mlError: null,
+      featureImportance: [],
+    });
+    try {
+      const fi = await getFeatureImportance(modelId);
+      const total = fi.reduce((acc, item) => acc + item.value, 0) || 1;
+      const normalized = fi.map((item) => ({
+        name: item.name,
+        value: item.value / total,
+      }));
+      set({ featureImportance: normalized });
+    } catch (err: any) {
+      const msg =
+        err?.response?.data?.detail ?? err?.message ?? "Failed to load feature importance";
+      set({ mlError: msg, featureImportance: [] });
+    } finally {
+      set({ isLoadingFeatureImportance: false });
     }
   },
   fetchPortfolioRuns: async () => {

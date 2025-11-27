@@ -1,83 +1,95 @@
-A quick project map with each file’s purpose and notable bits:
+# FinanTradeAlgo
 
-run_backtest.py: Loads 15m OHLCV CSV, adds basic features, runs EMA crossover backtest, prints report, writes equity/trades CSV.
-run_ml_backtest.py: Loads 15m OHLCV, builds features/labels, generates walk‑forward ML probabilities/signals, prints per‑block metrics and classification report, backtests signal column, writes equity/trades CSV.
-run_fetch_external_15m.py: Reads OHLCV range, pulls Binance funding and 15m open interest for that window, saves to CSVs.
-scripts/runml_compare_models.py: One-pass feature/label prep, runs walk‑forward/backtest for multiple model configs (GBM, LogReg, RF, XGB), prints classification/backtest metrics, writes comparison CSV.
-Core package:
+## Proje Özeti
+- **15m kripto araştırma ortamı**: Şu anda AIAUSDT ve BTCUSDT odaklı ama yapı diğer sembollere de kolayca genişliyor.
+- **Feature pipeline** fiyat/TA + microstructure + market structure + funding/OI + flow + sentiment kaynaklarını tek veri setinde birleştiriyor.
+- **Rule & ML stratejileri** portföy backtester, senaryo motoru, live/paper trading engine ve FastAPI + Next.js tabanlı UI ile uçtan uca deney alanı sağlıyor.
+- **Registry & explainability**: ML modelleri için registry, feature importance, hyperparam grid search ve CLI wrapper destekleniyor.
+- **API & Frontend**: FastAPI backend ve Next.js frontend, kullanıcıya chart/portfolio/strategy lab/ML lab/live kontrol paneli sunuyor.
 
-finantradealgo/core/backtest.py: Backtester with long/short, slippage/fees, stop/TP, flip-on-opposite-signal; builds metrics and trade log; BacktestConfig.
-core/data.py: CSV loader with required OHLCV schema, timestamp parsing/sorting.
-core/features.py: Basic returns/vol/EMA trend + regime labeling.
-core/portfolio.py: Portfolio/Position (side-aware) and equity tracking.
-core/risk.py: RiskEngine position sizing (risk-per-trade, stop-based).
-core/strategy.py: Strategy interface, SignalType, StrategyContext.
-core/report.py: Equity/trade/regime stats aggregation.
-core/pipeline.py: Unified 15m feature pipeline, toggles TA/candle/osc/MTF/external/rule blocks and returns feature list.
-(Other referenced core modules: ta_features, candle_features, osc_features, multi_tf_features, external_features, rule_signals assumed present.)
-Data sources:
+## Mimari Overview
+- **Backend katmanları**
+  - `finantradealgo/data_engine`: OHLCV, funding, OI, flow, sentiment vb. loader ve veri kaynakları.
+  - `finantradealgo/features`: TA, micro/macro structure, flow, sentiment ve rule sinyalleri dahil feature pipeline.
+  - `finantradealgo/strategies`: Rule, ML ve diğer strateji sınıfları + StrategyEngine.
+  - `finantradealgo/risk`: RiskEngine, pozisyon boyutlama, günlük limit vb.
+  - `finantradealgo/backtester`: BacktestEngine, PortfolioBacktestEngine, ScenarioEngine, Walkforward araçları.
+  - `finantradealgo/ml`: Labeling, modeller, registry, hyperparam search, importance.
+  - `finantradealgo/live_trading`: LiveEngine, replay data source, execution client, snapshot sistemi.
+  - `finantradealgo/api`: FastAPI sunucusu; backtest, portfolio, scenario, ML model ve live control endpoint’leri.
+- **Frontend**
+  - `frontend/web`: Next.js + lightweight-charts tabanlı UI; tabs: Single instrument chart, Portfolio, Strategy Lab, ML Lab, Live Control.
 
-data_sources/binance.py: Binance futures klines fetch (single/multi batches), config, save helpers.
-data_sources/init.py: Re-exports Binance helpers.
-Strategies:
+## Kurulum
+```bash
+git clone https://github.com/<you>/TradeProject.git
+cd TradeProject
 
-strategies/ema_cross.py: EMA crossover LONG/CLOSE signals.
-strategies/ml_signal.py: Uses model proba to emit LONG/CLOSE with hysteresis.
-strategies/rsi_reversion.py: RSI-based LONG/SHORT/CLOSE reversion test.
-strategies/signal_column.py: Simple long-only executor using a signal column.
-strategies/rule_signals.py: Generates rule-based signal from entry/exit columns; strategy opens/closes based on that signal.
-ML:
+python -m venv .venv
+# Linux / macOS
+source .venv/bin/activate
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
 
-ml/model.py: Configurable classifier wrapper (GBM/LogReg/RF/XGB), fit/predict_proba/evaluate, save/load.
-ml/labels.py: Forward-return long-only labels.
-ml/walkforward.py: Walk-forward training/prediction, writes ml_proba_long/ml_signal_long, per-block precision/recall/accuracy/f1 logging.
-Configs:
+pip install -r requirements.txt
+```
 
-config/ema_example.yml, config/ml_example.yml, config/rsi_example.yml: Sample YAMLs for runner.
-run_from_config.py: YAML-driven runner (data load, features/labels, optional model, strategy selection including RSI/EMA/ML), reporting.
-Data:
+## Hızlı Başlangıç
+### Data / Feature
+```bash
+python scripts/run_build_features_15m.py
+# veya CLI
+finantrade build-features --symbol AIAUSDT --tf 15m
+```
 
-data/ holds fetched CSVs (15m OHLCV, funding, OI).
+### ML Train + Backtest
+```bash
+python scripts/run_ml_train_15m.py
+python scripts/run_ml_backtest_15m.py
+```
 
-## Sprint 2 additions
+### API
+```bash
+python scripts/run_api.py
+# veya uvicorn
+uvicorn finantradealgo.api.server:create_app --factory --reload
+```
 
-- API
-  - `GET /api/meta` returns symbols/timeframes/strategies from `config/system.yml`.
-  - `POST /api/backtests/run` accepts optional `strategy_params` to override config (e.g., rule filters).
-  - `POST /api/scenarios/run` executes a scenario preset from config and returns summary rows.
-  - Portfolio: `GET /api/portfolio/backtests` lists saved portfolio runs; `GET /api/portfolio/equity/{run_id}` returns equity points.
-- ML registry tooling
-  - `scripts/run_list_models.py [--only-valid] [--only-symbol SYMBOL]` to inspect registry entries and artifacts.
-  - `scripts/run_clean_registry.py [--prune-dirs]` to drop broken registry rows (and optionally delete missing dirs).
-- Frontend
-  - Dropdowns are populated via `/api/meta`.
-  - Rule strategy has an “Advanced params” panel (ms_trend_min/max, use_ms_chop_filter) passed as `strategy_params`.
-  - Backtest button shows inline success/error feedback; scenario panel can run presets and show a simple result table.
+### Frontend
+```bash
+cd frontend/web
+npm install
+npm run dev
+```
 
-## Portfolio backtest quickstart
+### Docker Quickstart
+```bash
+docker-compose up --build
+# API → http://localhost:8000/docs
+# UI  → http://localhost:3000
+```
 
-- CLI: `python scripts/run_portfolio_backtest_15m.py`
-  - Uses `portfolio` block in `config/system.yml` (symbols, timeframe, strategy, allocation).
-  - Outputs: `outputs/backtests/portfolio_*_equity.csv` and per-symbol equity CSVs, plus `outputs/trades/portfolio_*_trades.csv`.
-- API:
-  - `GET /api/portfolio/backtests` → list of runs with metrics (`final_equity`, `cum_return`, etc.).
-  - `GET /api/portfolio/equity/{run_id}` → equity curve points (`time`, `portfolio_equity`).
+## Kısaltılmış Dosya Ağacı
+```
+config/
+data/
+docs/
+finantradealgo/
+  data_engine/
+  features/
+  strategies/
+  risk/
+  backtester/
+  ml/
+  live_trading/
+  api/
+frontend/web/
+scripts/
+tests/
+outputs/
+```
 
-## Strategy param override
-
-- Backend: `POST /api/backtests/run` supports `strategy_params` to override strategy config at call time:
-  ```json
-  {
-    "symbol": "AIAUSDT",
-    "timeframe": "15m",
-    "strategy": "rule",
-    "strategy_params": { "ms_trend_min": 1.5, "ms_trend_max": 4.0 }
-  }
-  ```
-- Frontend: Rule strategy “Advanced params” panel sends these overrides; behavior verified by API tests.
-
-## Scenario engine & meta
-
-- Presets are defined under `scenario.presets` in `config/system.yml`.
-- Run via `POST /api/scenarios/run` with `preset_name`.
-- Discover presets with `GET /api/meta` → `scenario_presets`, used by the frontend dropdown.
+## Notlar
+- Bu depo araştırma ve prototipleme amaçlıdır; **production trading riski size aittir.**
+- Binance / diğer veri kaynakları için rate limit / API key / mevzuat sorumluluğu size aittir.
+- Gönderilen CLI (`finantrade ...`) tüm temel script’leri tek çatı altında toplar.

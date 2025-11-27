@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=65", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "finantradealgo"
+version = "0.1.0"
+description = "FinanTradeAlgo research and backtesting toolkit"
+readme = "README.md"
+requires-python = ">=3.10"
+dependencies = [
+    "pandas",
+    "numpy",
+    "scikit-learn",
+    "joblib",
+    "requests",
+    "PyYAML",
+    "xgboost",
+    "pytest",
+    "fastapi",
+    "uvicorn[standard]",
+    "pydantic>=2.0",
+    "click>=8.0",
+]
+
+[project.scripts]
+finantrade = "finantradealgo.system.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["finantradealgo*", "scripts*"]

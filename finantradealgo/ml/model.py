@@ -71,7 +71,7 @@ class ModelMetadata:
     python_version: str = ""
     sklearn_version: str = ""
     pandas_version: str = ""
-    pipeline_version: str = "unknown"
+    feature_importances: Optional[Dict[str, float]] = None
 
 
 class SklearnLongModel:
@@ -233,6 +233,18 @@ def save_sklearn_model(
     if metrics:
         pd.DataFrame([metrics]).to_csv(metrics_path, index=False)
 
+    feature_importances: Optional[Dict[str, float]] = None
+    if feature_cols and hasattr(model, "feature_importances_"):
+        raw = getattr(model, "feature_importances_", None)
+        if raw is not None:
+            arr = np.asarray(raw, dtype=float)
+            if arr.size:
+                total = float(arr.sum()) or 1.0
+                feature_importances = {
+                    name: float(val) / total
+                    for name, val in zip(feature_cols, arr)
+                }
+
     meta = ModelMetadata(
         model_id=model_id,
         symbol=symbol,
@@ -253,6 +265,7 @@ def save_sklearn_model(
         model_path=model_path,
         metrics_path=metrics_path,
         meta_path=meta_path,
+        feature_importances=feature_importances,
     )
 
     with open(meta_path, "w", encoding="utf-8") as f:

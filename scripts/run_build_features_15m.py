@@ -1,6 +1,7 @@
 from __future__ import annotations
 import sys
 from pathlib import Path
+from typing import Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -20,17 +21,23 @@ def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: s
     )
 
 
-def main() -> None:
+def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
     sys_cfg = load_system_config()
-    data_cfg = sys_cfg.get("data", {})
-    symbol = sys_cfg.get("symbol", "BTCUSDT")
-    timeframe = sys_cfg.get("timeframe", "15m")
+    cfg = dict(sys_cfg)
+    if symbol:
+        cfg["symbol"] = symbol
+    if timeframe:
+        cfg["timeframe"] = timeframe
 
-    df_feat, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
+    data_cfg = cfg.get("data", {}) or {}
+    resolved_symbol = cfg.get("symbol", "BTCUSDT")
+    resolved_timeframe = cfg.get("timeframe", "15m")
+
+    df_feat, pipeline_meta = build_feature_pipeline_from_system_config(cfg)
     feature_cols = pipeline_meta.get("feature_cols", [])
-    preset = pipeline_meta.get("feature_preset", sys_cfg.get("features", {}).get("feature_preset", "extended"))
+    preset = pipeline_meta.get("feature_preset", cfg.get("features", {}).get("feature_preset", "extended"))
     pipeline_version = pipeline_meta.get("pipeline_version", "unknown")
-    log_run_header(symbol, timeframe, preset, pipeline_version)
+    log_run_header(resolved_symbol, resolved_timeframe, preset, pipeline_version)
 
     print(f"[INFO] Feature DF shape: {df_feat.shape}")
     print("[INFO] First 40 columns:")
@@ -39,7 +46,7 @@ def main() -> None:
     print(df_feat.tail())
 
     features_dir = Path(data_cfg.get("features_dir", "data/features"))
-    out_path = features_dir / f"{symbol}_features_{timeframe}.csv"
+    out_path = features_dir / f"{resolved_symbol}_features_{resolved_timeframe}.csv"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df_feat.to_csv(out_path, index=False)
     print(f"[INFO] Saved features -> {out_path}")

@@ -30,6 +30,8 @@ class RuleSignalConfig:
     use_ms_chop_filter: bool = False
     allow_chop: bool = False
     use_fvg_filter: bool = False
+    min_sentiment: Optional[float] = None
+    max_sentiment: Optional[float] = None
 
     @classmethod
     def from_dict(cls, data: Optional[dict]) -> "RuleSignalConfig":
@@ -57,6 +59,8 @@ class RuleSignalConfig:
             use_ms_chop_filter=data.get("use_ms_chop_filter", cls.use_ms_chop_filter),
             allow_chop=data.get("allow_chop", cls.allow_chop),
             use_fvg_filter=data.get("use_fvg_filter", cls.use_fvg_filter),
+            min_sentiment=data.get("min_sentiment", cls.min_sentiment),
+            max_sentiment=data.get("max_sentiment", cls.max_sentiment),
         )
 
 
@@ -118,6 +122,17 @@ def build_rule_signals(
             "FVG (up)",
         )
         entry_core = entry_core & (df[fvg_col] == 1)
+
+    if cfg.min_sentiment is not None or cfg.max_sentiment is not None:
+        if "sentiment_score" not in df.columns:
+            raise ValueError(
+                "RuleSignalConfig requires sentiment filtering but 'sentiment_score' column is missing. "
+                "Enable sentiment features in the pipeline."
+            )
+        lower = cfg.min_sentiment if cfg.min_sentiment is not None else float("-inf")
+        upper = cfg.max_sentiment if cfg.max_sentiment is not None else float("inf")
+        sentiment_mask = df["sentiment_score"].between(lower, upper)
+        entry_core = entry_core & sentiment_mask
 
     if cfg.use_patterns:
         patt = (

@@ -1,49 +1,55 @@
 from __future__ import annotations
 
+import json
+from pathlib import Path
+
 import pandas as pd
-import pytest
 from fastapi.testclient import TestClient
 
+from finantradealgo.api import server as server_module
 from finantradealgo.api.server import create_app
 
 
-@pytest.fixture
-def client(monkeypatch):
-    def _fake_run_scenario_preset(cfg, preset_name: str):
-        return pd.DataFrame(
+def _build_client(monkeypatch, tmp_path: Path) -> TestClient:
+    out_dir = tmp_path / "outputs" / "backtests"
+    out_dir.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(server_module, "SCENARIO_GRID_DIR", out_dir)
+    return TestClient(create_app()), out_dir
+
+
+def test_list_scenarios_reads_latest_csv(tmp_path, monkeypatch):
+    client, out_dir = _build_client(monkeypatch, tmp_path)
+    csv_path = out_dir / "scenario_grid_AIAUSDT_15m.csv"
+    df = pd.DataFrame(
+        [
             {
-                "label": ["scenario_a"],
-                "strategy": ["rule"],
-                "cum_return": [0.1],
-                "sharpe": [1.2],
-                "trade_count": [5],
+                "scenario_id": "rule-0",
+                "label": "rule_tp2",
+                "symbol": "AIAUSDT",
+                "timeframe": "15m",
+                "strategy": "rule",
+                "params_json": json.dumps({"tp_atr_mult": 2.0}),
+                "cum_return": 1.5,
+                "sharpe": 1.2,
+                "max_drawdown": -0.3,
+                "trade_count": 42,
             }
-        )
-
-    monkeypatch.setattr("finantradealgo.api.server.run_scenario_preset", _fake_run_scenario_preset)
-    return TestClient(create_app())
-
-
-def test_run_scenarios_ok(client: TestClient):
-    resp = client.post(
-        "/api/scenarios/run",
-        json={"symbol": "AIAUSDT", "timeframe": "15m", "preset_name": "core_15m"},
+        ]
     )
+    df.to_csv(csv_path, index=False)
+
+    resp = client.get("/api/scenarios/AIAUSDT/15m")
     assert resp.status_code == 200
     data = resp.json()
-    assert data["preset_name"] == "core_15m"
-    assert isinstance(data["rows"], list)
-    assert len(data["rows"]) > 0
+    assert len(data) == 1
+    item = data[0]
+    assert item["scenario_id"] == "rule-0"
+    assert item["strategy"] == "rule"
+    assert item["params"]["tp_atr_mult"] == 2.0
+    assert item["metrics"]["cum_return"] == 1.5
 
 
-def test_run_scenarios_not_found(monkeypatch):
-    def _raise(cfg, preset_name: str):
-        raise KeyError("missing")
-
-    monkeypatch.setattr("finantradealgo.api.server.run_scenario_preset", _raise)
-    client = TestClient(create_app())
-    resp = client.post(
-        "/api/scenarios/run",
-        json={"symbol": "AIAUSDT", "timeframe": "15m", "preset_name": "missing"},
-    )
+def test_list_scenarios_missing_file(tmp_path, monkeypatch):
+    client, _ = _build_client(monkeypatch, tmp_path)
+    resp = client.get("/api/scenarios/AIAUSDT/15m")
     assert resp.status_code == 404

@@ -49,12 +49,20 @@ export default function HomePage() {
     ruleParams,
     setRuleParams,
     lastRunMetrics,
-    availableScenarioPresets,
-    scenarioPreset,
     scenarioResults,
-    runScenarioPreset,
-    isRunningScenario,
+    selectedScenarioId,
+    isLoadingScenarios,
     scenarioError,
+    fetchScenarioResults,
+    setSelectedScenarioId,
+    mlModels,
+    selectedModelId,
+    featureImportance,
+    isLoadingMlModels,
+    isLoadingFeatureImportance,
+    mlError,
+    fetchMlModels,
+    selectModel,
     portfolioRuns,
     selectedPortfolioRunId,
     portfolioEquity,
@@ -69,11 +77,38 @@ export default function HomePage() {
     sendLiveCommand,
   } = useChartStore();
 
-  const [activeTab, setActiveTab] = useState<"single" | "portfolio" | "live">("single");
+  const [activeTab, setActiveTab] = useState<"single" | "portfolio" | "live" | "lab" | "ml">("single");
   const filteredRuns = useMemo(
     () => backtests.filter((run) => run.strategy === selectedStrategy),
     [backtests, selectedStrategy]
   );
+  const selectedScenario = useMemo(
+    () =>
+      scenarioResults.find((row) => row.scenario_id === selectedScenarioId) ?? null,
+    [scenarioResults, selectedScenarioId]
+  );
+  const selectedMlModel = useMemo(
+    () => mlModels.find((m) => m.model_id === selectedModelId) ?? null,
+    [mlModels, selectedModelId]
+  );
+
+  const formatKeyParams = (params: Record<string, any>, limit = 3) => {
+    const entries = Object.entries(params ?? {});
+    if (!entries.length) {
+      return "-";
+    }
+    return entries
+      .slice(0, limit)
+      .map(([key, value]) => `${key}=${value}`)
+      .join(", ");
+  };
+
+  const formatMetricValue = (value?: number | null, precision = 2) => {
+    if (value === null || value === undefined || Number.isNaN(value)) {
+      return "-";
+    }
+    return Number(value).toFixed(precision);
+  };
 
   useEffect(() => {
     initMeta();
@@ -165,6 +200,12 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, [activeTab, fetchLiveStatus]);
 
+  useEffect(() => {
+    if (activeTab === "ml" && !isLoadingMlModels && mlModels.length === 0) {
+      fetchMlModels();
+    }
+  }, [activeTab, fetchMlModels, isLoadingMlModels, mlModels.length]);
+
   return (
     <main className="min-h-screen px-6 py-4 flex flex-col gap-4 bg-slate-50">
       <div className="flex gap-3 border-b pb-2 text-sm">
@@ -182,6 +223,18 @@ export default function HomePage() {
           }}
         >
           Portfolio
+        </button>
+        <button
+          className={`px-2 ${activeTab === "lab" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => setActiveTab("lab")}
+        >
+          Strategy Lab
+        </button>
+        <button
+          className={`px-2 ${activeTab === "ml" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => setActiveTab("ml")}
+        >
+          ML Lab
         </button>
         <button
           className={`px-2 ${activeTab === "live" ? "font-semibold border-b-2 border-blue-500" : ""}`}
@@ -371,69 +424,6 @@ export default function HomePage() {
             />
           </section>
 
-          <section className="rounded bg-white shadow p-4">
-            <h2 className="font-semibold mb-2 text-sm uppercase tracking-wider text-gray-500">
-              Scenarios
-            </h2>
-            <div className="flex flex-wrap items-center gap-3 text-sm mb-3">
-              <label className="flex items-center gap-2">
-                <span>Preset</span>
-                <select
-                  className="border px-2 py-1 rounded"
-                  value={scenarioPreset}
-                  onChange={(e) => runScenarioPreset(e.target.value)}
-                  disabled={isRunningScenario}
-                >
-                  <option value="core_15m">core_15m</option>
-                </select>
-              </label>
-              <button
-                className="px-3 py-1 border rounded"
-                onClick={() => runScenarioPreset()}
-                disabled={isRunningScenario}
-              >
-                {isRunningScenario ? "Running..." : "Run scenarios"}
-              </button>
-              {scenarioError && <span className="text-red-600">{scenarioError}</span>}
-            </div>
-            <div className="overflow-auto">
-              <table className="min-w-full text-sm">
-                <thead>
-                  <tr className="text-left border-b">
-                    <th className="pr-4">Label</th>
-                    <th className="pr-4">Strategy</th>
-                    <th className="pr-4">Cum Return</th>
-                    <th className="pr-4">Sharpe</th>
-                    <th className="pr-4">Trades</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {scenarioResults.map((row) => (
-                    <tr key={row.label + row.strategy} className="border-b last:border-0">
-                      <td className="pr-4 py-1">{row.label}</td>
-                      <td className="pr-4">{row.strategy}</td>
-                      <td className="pr-4">
-                        {row.cum_return !== null && row.cum_return !== undefined
-                          ? (row.cum_return * 100).toFixed(2) + "%"
-                          : "-"}
-                      </td>
-                      <td className="pr-4">
-                        {row.sharpe !== null && row.sharpe !== undefined ? row.sharpe.toFixed(2) : "-"}
-                      </td>
-                      <td className="pr-4">{row.trade_count ?? "-"}</td>
-                    </tr>
-                  ))}
-                  {scenarioResults.length === 0 && (
-                    <tr>
-                      <td className="py-2 text-gray-500" colSpan={5}>
-                        No scenario results yet.
-                      </td>
-                    </tr>
-                  )}
-                </tbody>
-              </table>
-            </div>
-          </section>
         </div>
 
         <div className="flex flex-col gap-4">
@@ -498,6 +488,290 @@ export default function HomePage() {
             </div>
           </div>
         </>
+      )}
+
+      {activeTab === "lab" && (
+        <section className="space-y-4">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <span>Symbol</span>
+              <select
+                value={symbol}
+                onChange={(e) => setSymbol(e.target.value)}
+                className="border px-2 py-1 rounded"
+              >
+                {(availableSymbols.length ? availableSymbols : [symbol]).map((s) => (
+                  <option key={s} value={s}>
+                    {s}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2">
+              <span>Timeframe</span>
+              <select
+                value={timeframe}
+                onChange={(e) => setTimeframe(e.target.value)}
+                className="border px-2 py-1 rounded"
+              >
+                {(availableTimeframes.length ? availableTimeframes : [timeframe]).map((tf) => (
+                  <option key={tf} value={tf}>
+                    {tf}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button
+              className="px-3 py-1 border rounded"
+              onClick={() => fetchScenarioResults()}
+              disabled={isLoadingScenarios}
+            >
+              {isLoadingScenarios ? "Loading..." : "Load Scenarios"}
+            </button>
+            {scenarioError && <span className="text-xs text-red-600">{scenarioError}</span>}
+          </div>
+
+          <div className="rounded bg-white shadow overflow-auto">
+            <table className="min-w-full text-xs">
+              <thead>
+                <tr className="text-left border-b bg-slate-100">
+                  <th className="px-2 py-1">Label</th>
+                  <th className="px-2 py-1">Strategy</th>
+                  <th className="px-2 py-1">Key Params</th>
+                  <th className="px-2 py-1 text-right">CumRet</th>
+                  <th className="px-2 py-1 text-right">Sharpe</th>
+                  <th className="px-2 py-1 text-right">MaxDD</th>
+                  <th className="px-2 py-1 text-right">Trades</th>
+                </tr>
+              </thead>
+              <tbody>
+                {scenarioResults.map((row) => {
+                  const metrics = row.metrics ?? {};
+                  const isSelected = row.scenario_id === selectedScenarioId;
+                  return (
+                    <tr
+                      key={row.scenario_id}
+                      className={`border-b last:border-0 cursor-pointer ${
+                        isSelected ? "bg-blue-50" : "hover:bg-slate-50"
+                      }`}
+                      onClick={() => setSelectedScenarioId(row.scenario_id)}
+                    >
+                      <td className="px-2 py-1">{row.label ?? row.scenario_id}</td>
+                      <td className="px-2 py-1">{row.strategy}</td>
+                      <td className="px-2 py-1">{formatKeyParams(row.params)}</td>
+                      <td className="px-2 py-1 text-right">
+                        {formatMetricValue(metrics.cum_return)}
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        {formatMetricValue(metrics.sharpe)}
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        {formatMetricValue(metrics.max_drawdown)}
+                      </td>
+                      <td className="px-2 py-1 text-right">
+                        {metrics.trade_count ?? "-"}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {scenarioResults.length === 0 && !isLoadingScenarios && (
+                  <tr>
+                    <td className="px-2 py-4 text-center text-slate-500" colSpan={7}>
+                      No scenarios loaded yet.
+                    </td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="rounded bg-white shadow p-4">
+            {selectedScenario ? (
+              <div className="space-y-3 text-sm">
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Label</div>
+                    <div className="font-semibold">
+                      {selectedScenario.label ?? selectedScenario.scenario_id}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Strategy</div>
+                    <div className="font-semibold">{selectedScenario.strategy}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Symbol/TF</div>
+                    <div className="font-semibold">
+                      {selectedScenario.symbol}/{selectedScenario.timeframe}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Cum Return</div>
+                    <div className="font-semibold">
+                      {formatMetricValue(selectedScenario.metrics?.cum_return)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Sharpe</div>
+                    <div className="font-semibold">
+                      {formatMetricValue(selectedScenario.metrics?.sharpe)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Max DD</div>
+                    <div className="font-semibold">
+                      {formatMetricValue(selectedScenario.metrics?.max_drawdown)}
+                    </div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Trades</div>
+                    <div className="font-semibold">
+                      {selectedScenario.metrics?.trade_count ?? "-"}
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div className="text-xs uppercase text-gray-500 mb-1">Params</div>
+                  <pre className="bg-slate-50 rounded p-2 text-xs whitespace-pre-wrap">
+                    {JSON.stringify(selectedScenario.params ?? {}, null, 2)}
+                  </pre>
+                </div>
+              </div>
+            ) : (
+              <p className="text-sm text-gray-500">Select a scenario to view the details.</p>
+            )}
+          </div>
+        </section>
+      )}
+
+      {activeTab === "ml" && (
+        <section className="grid grid-cols-1 md:grid-cols-[1.2fr,1.8fr] gap-4">
+          <div className="border rounded bg-white shadow p-3 space-y-2 text-xs">
+            <div className="flex items-center justify-between gap-2">
+              <div className="font-semibold text-sm">
+                Models ({symbol}/{timeframe})
+              </div>
+              <button
+                onClick={() => fetchMlModels()}
+                disabled={isLoadingMlModels}
+                className="px-2 py-1 border rounded text-xs"
+              >
+                {isLoadingMlModels ? "Loading..." : "Refresh"}
+              </button>
+            </div>
+            {mlError && <div className="text-xs text-red-600">{mlError}</div>}
+            <div className="max-h-72 overflow-auto border rounded">
+              {mlModels.length === 0 && !isLoadingMlModels ? (
+                <div className="p-2 text-slate-500">No models found.</div>
+              ) : (
+                <ul>
+                  {mlModels.map((m) => {
+                    const isSelected = m.model_id === selectedModelId;
+                    const acc = m.metrics?.accuracy ?? m.metrics?.acc;
+                    const f1 = m.metrics?.f1;
+                    return (
+                      <li
+                        key={m.model_id}
+                        className={`px-2 py-1 cursor-pointer border-b last:border-b-0 hover:bg-slate-50 ${
+                          isSelected ? "bg-blue-50" : ""
+                        }`}
+                        onClick={() => selectModel(m.model_id)}
+                      >
+                        <div className="flex justify-between">
+                          <span className="font-medium text-[11px]">
+                            {m.model_type} · {m.model_id.slice(0, 8)}
+                          </span>
+                          <span className="text-[10px] text-slate-500">
+                            {new Date(m.created_at).toLocaleString()}
+                          </span>
+                        </div>
+                        <div className="flex gap-3 text-[10px] text-slate-700">
+                          <span>acc: {acc !== undefined ? acc.toFixed(3) : "-"}</span>
+                          <span>f1: {f1 !== undefined ? f1.toFixed(3) : "-"}</span>
+                        </div>
+                      </li>
+                    );
+                  })}
+                </ul>
+              )}
+            </div>
+          </div>
+
+          <div className="border rounded bg-white shadow p-3 space-y-3 text-xs">
+            <div className="flex justify-between items-center">
+              <div className="font-semibold text-sm">Model details</div>
+              {isLoadingFeatureImportance && (
+                <span className="text-[10px] text-slate-500">Loading importance...</span>
+              )}
+            </div>
+            {selectedMlModel ? (
+              <>
+                <div className="flex flex-wrap gap-4">
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Model</div>
+                    <div className="font-semibold text-[11px] break-all">{selectedMlModel.model_id}</div>
+                  </div>
+                  <div>
+                    <div className="text-xs uppercase text-gray-500">Created</div>
+                    <div className="font-semibold">
+                      {new Date(selectedMlModel.created_at).toLocaleString()}
+                    </div>
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                  {[
+                    { label: "Accuracy", value: selectedMlModel.metrics?.accuracy },
+                    { label: "Precision", value: selectedMlModel.metrics?.precision },
+                    { label: "Recall", value: selectedMlModel.metrics?.recall },
+                    { label: "F1", value: selectedMlModel.metrics?.f1 },
+                    { label: "ROC AUC", value: selectedMlModel.metrics?.roc_auc },
+                    { label: "Sharpe", value: selectedMlModel.metrics?.sharpe },
+                    { label: "Cum Return", value: selectedMlModel.metrics?.cum_return },
+                  ].map((entry) => (
+                    <div key={entry.label} className="rounded border p-2 text-center">
+                      <div className="text-[10px] uppercase text-gray-500">{entry.label}</div>
+                      <div className="font-semibold text-sm">{formatMetricValue(entry.value)}</div>
+                    </div>
+                  ))}
+                </div>
+                <div>
+                  <div className="font-medium mb-1">Feature importance</div>
+                  {featureImportance.length === 0 ? (
+                    <div className="text-slate-500 text-[11px]">
+                      No feature importance data for this model.
+                    </div>
+                  ) : (
+                    <div className="max-h-64 overflow-auto space-y-1">
+                      {featureImportance
+                        .slice()
+                        .sort((a, b) => b.value - a.value)
+                        .map((fi) => (
+                          <div key={fi.name} className="flex items-center gap-2">
+                            <div className="w-32 truncate" title={fi.name}>
+                              {fi.name}
+                            </div>
+                            <div className="flex-1 bg-slate-100 h-3 rounded">
+                              <div
+                                className="h-3 rounded bg-blue-500"
+                                style={{ width: `${Math.min(fi.value * 100, 100)}%` }}
+                              />
+                            </div>
+                            <div className="w-12 text-right text-[10px]">
+                              {(fi.value * 100).toFixed(1)}%
+                            </div>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </>
+            ) : (
+              <div className="text-slate-500 text-[11px]">Select a model from the list.</div>
+            )}
+          </div>
+        </section>
       )}
 
       {activeTab === "portfolio" && (

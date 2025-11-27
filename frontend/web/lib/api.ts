@@ -147,3 +147,46 @@ export async function sendLiveControl(body: { command: string; run_id?: string }
   const res = await axios.post(`${API_BASE}/api/live/control`, body);
   return res.data;
 }
+
+export type ScenarioResult = {
+  scenario_id: string;
+  label?: string | null;
+  symbol: string;
+  timeframe: string;
+  strategy: string;
+  params: Record<string, any>;
+  metrics: Record<string, number>;
+};
+
+export async function getScenarioResults(symbol: string, timeframe: string) {
+  const res = await axios.get(`${API_BASE}/api/scenarios/${symbol}/${timeframe}`);
+  return res.data as ScenarioResult[];
+}
+
+export type ModelInfo = {
+  model_id: string;
+  symbol: string;
+  timeframe: string;
+  model_type: string;
+  created_at: string;
+  metrics: Record<string, number>;
+};
+
+export type FeatureImportanceItem = {
+  name: string;
+  value: number;
+};
+
+export async function getMlModels(symbol: string, timeframe: string) {
+  const res = await axios.get(`${API_BASE}/api/ml/models/${symbol}/${timeframe}`);
+  return res.data as ModelInfo[];
+}
+
+export async function getFeatureImportance(modelId: string) {
+  const res = await axios.get(`${API_BASE}/api/ml/models/${modelId}/importance`);
+  const raw = (res.data ?? {}) as Record<string, number>;
+  return Object.entries(raw).map(([name, value]) => ({
+    name,
+    value,
+  }));
+}

@@ -3,10 +3,15 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
+import logging
 
 import pandas as pd
 
-from finantradealgo.data_engine.loader import load_ohlcv_csv
+from finantradealgo.data_engine.loader import (
+    load_ohlcv_csv,
+    load_flow_features,
+    load_sentiment_features,
+)
 from finantradealgo.core.external_features import add_external_features
 from finantradealgo.features.base_features import FeatureConfig, add_basic_features
 from finantradealgo.features.candle_features import (
@@ -28,9 +33,12 @@ from finantradealgo.features.microstructure_features import (
 from finantradealgo.features.osc_features import OscFeatureConfig, add_osc_features
 from finantradealgo.features.rule_signals import RuleSignalConfig, add_rule_signals_v1
 from finantradealgo.features.ta_features import TAFeatureConfig, add_ta_features
+from finantradealgo.features.flow_features import add_flow_features
+from finantradealgo.features.sentiment_features import add_sentiment_features
 from finantradealgo.system.config_loader import load_system_config
 
 PIPELINE_VERSION_15M = "v1.0.0"
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -44,6 +52,8 @@ class FeaturePipelineConfig:
     use_market_structure: bool = True
     use_external: bool = True
     use_rule_signals: bool = True
+    use_flow_features: bool = False
+    use_sentiment_features: bool = False
     drop_na: bool = True
     feature_preset: str = "extended"
 
@@ -65,6 +75,8 @@ def build_feature_pipeline_15m(
     pipeline_cfg: Optional[FeaturePipelineConfig] = None,
     csv_funding_path: Optional[str] = None,
     csv_oi_path: Optional[str] = None,
+    flow_df: Optional[pd.DataFrame] = None,
+    sentiment_df: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     cfg = pipeline_cfg or FeaturePipelineConfig()
 
@@ -116,6 +128,12 @@ def build_feature_pipeline_15m(
             rule_cfg.allowed_weekdays = cfg.rule_allowed_weekdays
         df = add_rule_signals_v1(df, rule_cfg)
 
+    if cfg.use_flow_features and flow_df is not None and not flow_df.empty:
+        df = add_flow_features(df, flow_df)
+
+    if cfg.use_sentiment_features and sentiment_df is not None and not sentiment_df.empty:
+        df = add_sentiment_features(df, sentiment_df)
+
     if cfg.drop_na:
         df = df.dropna().reset_index(drop=True)
 
@@ -157,14 +175,24 @@ def get_feature_cols_15m(df: pd.DataFrame, preset: str = "extended") -> List[str
             numeric_cols.append(col)
 
     ms_cols = [c for c in numeric_cols if c.startswith("ms_")]
-    base_cols = [c for c in numeric_cols if c not in ms_cols]
+    flow_cols = [c for c in numeric_cols if c.startswith("flow_")]
+    sent_cols = [c for c in numeric_cols if c.startswith("sentiment_")]
+    base_cols = [
+        c for c in numeric_cols if c not in set(ms_cols + flow_cols + sent_cols)
+    ]
 
     preset_lower = preset.lower()
     if preset_lower == "core":
         return base_cols
 
     if preset_lower == "extended":
-        return list(dict.fromkeys(base_cols + ms_cols))
+        return list(dict.fromkeys(base_cols + ms_cols + flow_cols + sent_cols))
+
+    if preset_lower == "flow":
+        return list(dict.fromkeys(base_cols + flow_cols))
+
+    if preset_lower in {"flow_sentiment", "flow-sentiment"}:
+        return list(dict.fromkeys(base_cols + flow_cols + sent_cols))
 
     return base_cols
 
@@ -195,6 +223,8 @@ def build_feature_pipeline_from_system_config(
             use_market_structure=feature_section.get("use_market_structure", False),
             use_external=feature_section.get("use_external", True),
             use_rule_signals=feature_section.get("use_rule_signals", True),
+            use_flow_features=feature_section.get("use_flow_features", False),
+            use_sentiment_features=feature_section.get("use_sentiment_features", False),
             drop_na=feature_section.get("drop_na", True),
             feature_preset=feature_section.get("feature_preset", "extended"),
             rule_allowed_hours=rule_section.get("allowed_hours"),
@@ -217,14 +247,43 @@ def build_feature_pipeline_from_system_config(
     external_dir = Path(data_section.get("external_dir", "data/external"))
 
     csv_ohlcv = ohlcv_dir / f"{symbol}_{timeframe}.csv"
-    csv_funding = external_dir / "funding" / f"{symbol}_funding_{timeframe}.csv"
-    csv_oi = external_dir / "open_interest" / f"{symbol}_oi_{timeframe}.csv"
+    csv_funding = external_dir / "funding" / f"{symbol}_{timeframe}_funding.csv"
+    csv_oi = external_dir / "open_interest" / f"{symbol}_{timeframe}_oi.csv"
+    flow_dir = data_section.get("flow_dir")
+    sentiment_dir = data_section.get("sentiment_dir")
+    base_data_dir = data_section.get("base_dir", "data")
+
+    flow_df = None
+    if fp_cfg.use_flow_features:
+        try:
+            flow_df = load_flow_features(
+                symbol,
+                timeframe,
+                flow_dir=flow_dir,
+                base_dir=base_data_dir,
+            )
+        except FileNotFoundError:
+            logger.warning("Flow features requested but CSV missing; skipping.")
+
+    sentiment_df = None
+    if fp_cfg.use_sentiment_features:
+        try:
+            sentiment_df = load_sentiment_features(
+                symbol,
+                timeframe,
+                sentiment_dir=sentiment_dir,
+                base_dir=base_data_dir,
+            )
+        except FileNotFoundError:
+            logger.warning("Sentiment features requested but CSV missing; skipping.")
 
     df, pipeline_meta = build_feature_pipeline_15m(
         csv_ohlcv_path=str(csv_ohlcv),
         pipeline_cfg=fp_cfg,
         csv_funding_path=str(csv_funding) if csv_funding.exists() else None,
         csv_oi_path=str(csv_oi) if csv_oi.exists() else None,
+        flow_df=flow_df,
+        sentiment_df=sentiment_df,
     )
 
     pipeline_meta["symbol"] = symbol

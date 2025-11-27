@@ -2,7 +2,12 @@ from __future__ import annotations
 
 import pandas as pd
 
-from finantradealgo.backtester.scenario_engine import ScenarioConfig, ScenarioEngine
+from finantradealgo.backtester.scenario_engine import (
+    Scenario,
+    ScenarioConfig,
+    ScenarioEngine,
+    run_scenarios,
+)
 from finantradealgo.system.config_loader import load_system_config
 
 
@@ -56,3 +61,27 @@ def test_run_scenarios_returns_dataframe():
     assert set(result["scenario_name"]) == {"rule_base", "trend_follow"}
     assert (result["trade_count"] >= 0).all()
     assert pd.api.types.is_numeric_dtype(result["cum_return"])
+
+
+def test_run_scenarios_produces_rows():
+    cfg = load_system_config()
+    scenarios = [
+        Scenario(
+            symbol="AIAUSDT",
+            timeframe="15m",
+            strategy="rule",
+            params={"tp_atr_mult": 2.0},
+        ),
+        Scenario(
+            symbol="AIAUSDT",
+            timeframe="15m",
+            strategy="rule",
+            params={"tp_atr_mult": 3.0},
+        ),
+    ]
+
+    df = run_scenarios(cfg, scenarios)
+    assert len(df) == 2
+    assert {"scenario_id", "symbol", "timeframe", "strategy"}.issubset(df.columns)
+    assert df["scenario_id"].nunique() == 2
+    assert (df["trade_count"] >= 0).all()

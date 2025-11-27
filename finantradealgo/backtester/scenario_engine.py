@@ -7,6 +7,7 @@ from copy import deepcopy
 import pandas as pd
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
+from finantradealgo.backtester.runners import run_backtest_once
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.features.feature_pipeline_15m import build_feature_pipeline_from_system_config
 from finantradealgo.strategies.strategy_engine import create_strategy
@@ -20,6 +21,65 @@ class ScenarioConfig:
     risk_params: Optional[Dict[str, Any]] = None
     feature_preset: Optional[str] = None
     train_mode: Optional[str] = None
+    symbol: Optional[str] = None
+    timeframe: Optional[str] = None
+
+
+@dataclass
+class Scenario:
+    symbol: str
+    timeframe: str
+    strategy: str
+    params: Dict[str, Any]
+    label: Optional[str] = None
+    feature_preset: Optional[str] = None
+    risk_params: Optional[Dict[str, Any]] = None
+
+
+def run_scenarios(
+    base_cfg: Dict[str, Any],
+    scenarios: List[Scenario],
+) -> pd.DataFrame:
+    rows: List[Dict[str, Any]] = []
+    for idx, sc in enumerate(scenarios):
+        cfg_local = deepcopy(base_cfg)
+        cfg_local["symbol"] = sc.symbol
+        cfg_local["timeframe"] = sc.timeframe
+
+        if sc.feature_preset:
+            feature_section = cfg_local.get("features", {}) or {}
+            feature_section["feature_preset"] = sc.feature_preset
+            cfg_local["features"] = feature_section
+
+        if sc.risk_params:
+            risk_section = dict(cfg_local.get("risk", {}) or {})
+            risk_section.update(sc.risk_params)
+            cfg_local["risk"] = risk_section
+
+        result = run_backtest_once(
+            symbol=sc.symbol,
+            timeframe=sc.timeframe,
+            strategy_name=sc.strategy,
+            cfg=cfg_local,
+            strategy_params=sc.params,
+        )
+        metrics = result.get("metrics", {}) or {}
+        scenario_id = sc.label or f"{sc.strategy}-{idx}"
+        rows.append(
+            {
+                "scenario_id": scenario_id,
+                "label": sc.label or scenario_id,
+                "symbol": sc.symbol,
+                "timeframe": sc.timeframe,
+                "strategy": sc.strategy,
+                "params": sc.params,
+                "cum_return": float(metrics.get("cum_return", 0.0)),
+                "sharpe": float(metrics.get("sharpe", 0.0)),
+                "max_drawdown": float(metrics.get("max_drawdown", 0.0)),
+                "trade_count": int(metrics.get("trade_count", 0)),
+            }
+        )
+    return pd.DataFrame(rows)
 
 
 class ScenarioEngine:
@@ -107,6 +167,8 @@ def load_scenarios_from_config(cfg: Dict[str, Any], preset_name: str) -> List[Sc
                 risk_params=entry.get("risk_params"),
                 feature_preset=entry.get("feature_preset"),
                 train_mode=entry.get("train_mode"),
+                symbol=entry.get("symbol"),
+                timeframe=entry.get("timeframe"),
             )
         )
     return scenarios
@@ -114,15 +176,30 @@ def load_scenarios_from_config(cfg: Dict[str, Any], preset_name: str) -> List[Sc
 
 def run_scenario_preset(cfg: Dict[str, Any], preset_name: str) -> pd.DataFrame:
     cfg_local = deepcopy(cfg)
-    scenarios = load_scenarios_from_config(cfg_local, preset_name)
-    df_features, _ = build_feature_pipeline_from_system_config(cfg_local)
-    engine = ScenarioEngine(cfg_local)
-    df_result = engine.run_scenarios(scenarios, df_features)
-    if "scenario_name" in df_result.columns:
-        df_result["label"] = df_result["scenario_name"]
-    if "strategy_name" in df_result.columns:
-        df_result["strategy"] = df_result["strategy_name"]
-    return df_result
+    configs = load_scenarios_from_config(cfg_local, preset_name)
+    scenarios: List[Scenario] = []
+    for sc in configs:
+        symbol = getattr(sc, "symbol", None) or cfg_local.get("symbol", "BTCUSDT")
+        timeframe = getattr(sc, "timeframe", None) or cfg_local.get("timeframe", "15m")
+        scenarios.append(
+            Scenario(
+                symbol=symbol,
+                timeframe=timeframe,
+                strategy=sc.strategy_name,
+                params=sc.strategy_params or {},
+                label=sc.name,
+                feature_preset=sc.feature_preset,
+                risk_params=sc.risk_params,
+            )
+        )
+    return run_scenarios(cfg_local, scenarios)
 
 
-__all__ = ["ScenarioConfig", "ScenarioEngine", "run_scenario_preset", "load_scenarios_from_config"]
+__all__ = [
+    "ScenarioConfig",
+    "ScenarioEngine",
+    "Scenario",
+    "run_scenario_preset",
+    "load_scenarios_from_config",
+    "run_scenarios",
+]

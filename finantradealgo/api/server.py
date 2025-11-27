@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import glob
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
@@ -9,17 +10,16 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from finantradealgo.features.feature_pipeline_15m import PIPELINE_VERSION_15M
-from finantradealgo.system.config_loader import load_system_config
-from finantradealgo.backtester.scenario_engine import run_scenario_preset
 from copy import deepcopy
-from finantradealgo.backtester.portfolio_engine import PortfolioBacktestEngine
-from finantradealgo.system.config_loader import PortfolioConfig
 
-from pydantic import BaseModel
+from finantradealgo.features.feature_pipeline_15m import PIPELINE_VERSION_15M
+from finantradealgo.system.config_loader import load_system_config, PortfolioConfig
+from finantradealgo.backtester.scenario_engine import run_scenario_preset
+from finantradealgo.ml.model_registry import load_registry, validate_registry_entry
+from finantradealgo.backtester.portfolio_engine import PortfolioBacktestEngine
 from finantradealgo.backtester.runners import run_backtest_once
 
-
+SCENARIO_GRID_DIR = Path("outputs") / "backtests"
 
 class BarPoint(BaseModel):
     time: float
@@ -143,6 +143,25 @@ class ScenarioResultRow(BaseModel):
 class ScenarioRunResponse(BaseModel):
     preset_name: str
     rows: List[ScenarioResultRow]
+
+
+class ScenarioResult(BaseModel):
+    scenario_id: str
+    symbol: str
+    timeframe: str
+    strategy: str
+    params: Dict[str, Any]
+    metrics: Dict[str, float]
+    label: Optional[str] = None
+
+
+class ModelInfo(BaseModel):
+    model_id: str
+    symbol: str
+    timeframe: str
+    model_type: str
+    created_at: str
+    metrics: Dict[str, float] = {}
 
 
 class PortfolioBacktestInfo(BaseModel):
@@ -593,6 +612,124 @@ def create_app() -> FastAPI:
             )
 
         return ScenarioRunResponse(preset_name=req.preset_name, rows=rows)
+
+    @app.get("/api/scenarios/{symbol}/{timeframe}", response_model=List[ScenarioResult])
+    def list_scenario_results(symbol: str, timeframe: str):
+        pattern = SCENARIO_GRID_DIR / f"scenario_grid_{symbol}_{timeframe}*.csv"
+        files = sorted(glob.glob(str(pattern)))
+        if not files:
+            raise HTTPException(status_code=404, detail="No scenario grids found for given symbol/timeframe")
+        path = Path(files[-1])
+        try:
+            df = pd.read_csv(path)
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Failed to read scenario grid: {exc}")
+        if df.empty:
+            return []
+        results: List[ScenarioResult] = []
+        for _, row in df.iterrows():
+            raw_params = row.get("params_json")
+            if raw_params is None:
+                raw_params = row.get("params", "{}")
+            if isinstance(raw_params, str):
+                try:
+                    params = json.loads(raw_params)
+                except json.JSONDecodeError:
+                    params = {}
+            elif isinstance(raw_params, dict):
+                params = raw_params
+            else:
+                params = {}
+
+            metrics: Dict[str, float] = {}
+            for key in ("cum_return", "sharpe", "max_drawdown", "trade_count"):
+                if key in df.columns:
+                    val = row.get(key)
+                    if pd.notna(val):
+                        metrics[key] = float(val)
+
+            results.append(
+                ScenarioResult(
+                    scenario_id=str(row.get("scenario_id", "")),
+                    label=row.get("label"),
+                    symbol=str(row.get("symbol", symbol)),
+                    timeframe=str(row.get("timeframe", timeframe)),
+                    strategy=str(row.get("strategy", "")),
+                    params=params,
+                    metrics=metrics,
+                )
+            )
+        return results
+
+    @app.get("/api/ml/models/{model_id}/importance")
+    def get_feature_importance(model_id: str) -> Dict[str, float]:
+        cfg_local = load_system_config()
+        ml_cfg = cfg_local.get("ml", {}) or {}
+        persistence_cfg = ml_cfg.get("persistence", {}) or {}
+        base_dir = Path(persistence_cfg.get("model_dir", "outputs/ml_models"))
+        model_path = base_dir / model_id
+        meta_path = model_path / "meta.json"
+
+        if not meta_path.exists():
+            raise HTTPException(status_code=404, detail="Model metadata not found")
+
+        try:
+            with meta_path.open("r", encoding="utf-8") as f:
+                meta = json.load(f)
+        except Exception as exc:  # pragma: no cover - unlikely
+            raise HTTPException(status_code=500, detail=f"Failed to read metadata: {exc}")
+
+        feature_importances = meta.get("feature_importances")
+        if isinstance(feature_importances, dict) and feature_importances:
+            return {str(k): float(v) for k, v in feature_importances.items()}
+
+        csv_path = model_path / "feature_importances.csv"
+        if csv_path.exists():
+            try:
+                df_imp = pd.read_csv(csv_path)
+            except Exception as exc:
+                raise HTTPException(status_code=500, detail=f"Failed to read feature importance CSV: {exc}")
+            if {"feature", "importance"}.issubset(df_imp.columns):
+                return {
+                    str(row["feature"]): float(row["importance"])
+                    for _, row in df_imp.iterrows()
+                }
+
+        raise HTTPException(status_code=404, detail="Feature importance not found for this model")
+
+    @app.get("/api/ml/models/{symbol}/{timeframe}", response_model=List[ModelInfo])
+    def list_ml_models(symbol: str, timeframe: str) -> List[ModelInfo]:
+        cfg_local = load_system_config()
+        ml_cfg = cfg_local.get("ml", {}) or {}
+        persistence_cfg = ml_cfg.get("persistence", {}) or {}
+        base_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
+
+        registry = load_registry(base_dir)
+        rows: List[ModelInfo] = []
+        for entry in registry.entries:
+            if entry.symbol != symbol or entry.timeframe != timeframe:
+                continue
+            if entry.status != "success":
+                continue
+            if not validate_registry_entry(base_dir, entry):
+                continue
+            metrics_dict: Dict[str, float] = {}
+            if entry.cum_return is not None:
+                metrics_dict["cum_return"] = float(entry.cum_return)
+            if entry.sharpe is not None:
+                metrics_dict["sharpe"] = float(entry.sharpe)
+            rows.append(
+                ModelInfo(
+                    model_id=entry.model_id,
+                    symbol=entry.symbol,
+                    timeframe=entry.timeframe,
+                    model_type=entry.model_type,
+                    created_at=entry.created_at,
+                    metrics=metrics_dict,
+                )
+            )
+        rows.sort(key=lambda item: item.created_at, reverse=True)
+        return rows
 
     def _compute_basic_metrics(equity: pd.Series) -> Dict[str, Optional[float]]:
         if equity.empty:

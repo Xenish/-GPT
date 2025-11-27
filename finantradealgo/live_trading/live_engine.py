@@ -59,10 +59,18 @@ class LiveEngine:
         self.start_time: Optional[pd.Timestamp] = None
         self.last_bar_time: Optional[pd.Timestamp] = None
 
-        live_dir = Path("outputs") / "live"
+        live_dir = Path(getattr(self.config, "state_dir", "outputs/live"))
+        state_path_override = getattr(self.config, "state_path", None)
+        latest_state_override = getattr(self.config, "latest_state_path", None)
         live_dir.mkdir(parents=True, exist_ok=True)
-        self.state_path = live_dir / f"live_state_{self.run_id}.json"
-        self.latest_state_path = live_dir / "live_state.json"
+        self.state_path = (
+            Path(state_path_override)
+            if state_path_override
+            else live_dir / f"live_state_{self.run_id}.json"
+        )
+        self.latest_state_path = (
+            Path(latest_state_override) if latest_state_override else live_dir / "live_state.json"
+        )
         self.save_state_every = max(int(self.config.paper.save_state_every_n_bars), 0)
 
     # ------------
@@ -176,6 +184,7 @@ class LiveEngine:
             positions = self.execution_client.get_open_positions()
         except AttributeError:
             positions = []
+        any_closed = False
         for pos in positions or []:
             try:
                 if hasattr(self.execution_client, "close_position_market"):
@@ -187,9 +196,13 @@ class LiveEngine:
                     )
                     ts = getattr(self.execution_client, "_last_timestamp", None) or pd.Timestamp.utcnow()
                     self.execution_client.submit_order("CLOSE", price=last_price, size=pos.get("qty"), timestamp=ts)
+                any_closed = True
             except Exception:
                 self.logger.exception("Failed to flatten position: %s", pos)
         self.requested_action = None
+        if any_closed:
+            ts_snapshot = getattr(self, "last_bar_time", None) or pd.Timestamp.utcnow()
+            self._write_snapshot(ts_snapshot)
 
     def export_results(self) -> Dict[str, Path]:
         return self.execution_client.export_logs(timeframe=self.config.timeframe)

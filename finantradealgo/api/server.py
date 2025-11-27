@@ -483,16 +483,19 @@ def create_app() -> FastAPI:
             )
         return trades
 
-    live_dir = Path("outputs") / "live"
+    live_cfg = cfg.get("live", {}) or {}
+    live_dir = Path(live_cfg.get("state_dir", "outputs/live"))
+    default_latest = live_cfg.get("latest_state_path") or live_dir / "live_state.json"
+    default_state_path = live_cfg.get("state_path")
 
     def _load_live_snapshot(run_id: Optional[str]) -> Dict[str, Any]:
         if run_id:
-            path = live_dir / f"live_state_{run_id}.json"
+            path = Path(default_state_path) if default_state_path else live_dir / f"live_state_{run_id}.json"
         else:
-            path = live_dir / "live_state.json"
-        if not path.exists():
+            path = Path(default_latest)
+        if not Path(path).exists():
             raise FileNotFoundError("Live snapshot not found.")
-        with path.open("r", encoding="utf-8") as fh:
+        with Path(path).open("r", encoding="utf-8") as fh:
             data = json.load(fh)
         if run_id and data.get("run_id") != run_id:
             raise ValueError("Snapshot run_id mismatch.")

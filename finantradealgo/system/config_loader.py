@@ -34,6 +34,9 @@ class LiveConfig:
     max_concurrent_positions: int = 1
     log_dir: str = "outputs/live_logs"
     log_level: str = "INFO"
+    state_dir: str = "outputs/live"
+    state_path: Optional[str] = None
+    latest_state_path: Optional[str] = "outputs/live/live_state.json"
     replay: ReplayConfig = field(default_factory=ReplayConfig)
     paper: PaperConfig = field(default_factory=PaperConfig)
 
@@ -84,6 +87,9 @@ class LiveConfig:
             ),
             log_dir=data.get("log_dir", cls.log_dir),
             log_level=str(data.get("log_level", cls.log_level)).upper(),
+            state_dir=data.get("state_dir", cls.state_dir),
+            state_path=data.get("state_path", cls.state_path),
+            latest_state_path=data.get("latest_state_path", cls.latest_state_path),
             replay=replay_cfg,
             paper=paper_cfg,
         )
@@ -239,6 +245,9 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
         "max_concurrent_positions": 1,
         "log_dir": "outputs/live_logs",
         "log_level": "INFO",
+        "state_dir": "outputs/live",
+        "state_path": None,
+        "latest_state_path": "outputs/live/live_state.json",
         "replay": {
             "bars_limit": 500,
             "start_index": 0,

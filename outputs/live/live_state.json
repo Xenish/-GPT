@@ -1,1 +1,18 @@
-{"run_id": "test_live_run", "symbol": "AIAUSDT", "timeframe": "15m", "strategy": "rule", "start_time": "2025-11-25T00:00:00Z", "last_bar_time": "2025-11-25T01:00:00Z", "equity": 10100.0, "realized_pnl": 100.0, "unrealized_pnl": 10.0, "daily_realized_pnl": 50.0, "open_positions": [], "risk_stats": {"blocked_entries": 0}}
+{
+  "run_id": "live_engine",
+  "symbol": "BTCUSDT",
+  "timeframe": "15m",
+  "strategy": "unknown",
+  "start_time": null,
+  "last_bar_time": "2025-11-27T01:20:31.643920+00:00",
+  "equity": 1000,
+  "realized_pnl": 0.0,
+  "unrealized_pnl": 0.0,
+  "daily_realized_pnl": 0.0,
+  "open_positions": [],
+  "risk_stats": {
+    "blocked_entries": 0,
+    "executed_trades": 0
+  },
+  "requested_action": null
+}

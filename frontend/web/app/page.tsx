@@ -7,7 +7,6 @@ import { useChartStore } from "@/store/useChartStore";
 import StrategySelector from "@/components/StrategySelector";
 import BacktestSelector from "@/components/BacktestSelector";
 import TradeTable from "@/components/TradeTable";
-import LiveMonitor from "@/components/LiveMonitor";
 
 const Chart = dynamic(() => import("@/components/Chart"), { ssr: false });
 
@@ -496,9 +495,8 @@ export default function HomePage() {
             )}
           </section>
 
-          <LiveMonitor />
-        </div>
-      </div>
+            </div>
+          </div>
         </>
       )}
 

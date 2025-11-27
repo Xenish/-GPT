@@ -145,3 +145,52 @@ def test_live_status_and_control(client):
     assert good.status_code == 200
     written = json.loads(state_path.read_text(encoding="utf-8"))
     assert written.get("requested_action") == "flatten"
+
+
+def test_live_paths_from_config(tmp_path, monkeypatch):
+    live_dir = tmp_path / "custom_live"
+    latest_path = live_dir / "latest.json"
+    run_state_path = live_dir / "run_state.json"
+    live_dir.mkdir(parents=True, exist_ok=True)
+
+    cfg = {
+        "live": {
+            "state_dir": str(live_dir),
+            "state_path": str(run_state_path),
+            "latest_state_path": str(latest_path),
+            "paper": {"state_path": str(live_dir / "paper_state.json")},
+        }
+    }
+
+    def fake_load():
+        return cfg
+
+    monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("finantradealgo.api.server.load_system_config", fake_load)
+    client = TestClient(create_app())
+
+    run_snapshot = {
+        "run_id": "abc",
+        "symbol": "AIAUSDT",
+        "timeframe": "15m",
+        "strategy": "rule",
+        "equity": 111,
+        "realized_pnl": 0,
+        "unrealized_pnl": 0,
+        "daily_realized_pnl": 0,
+        "open_positions": [],
+    }
+    run_state_path.write_text(json.dumps(run_snapshot), encoding="utf-8")
+    latest_path.write_text(json.dumps(run_snapshot), encoding="utf-8")
+
+    resp = client.get("/api/live/status")
+    assert resp.status_code == 200
+    assert resp.json()["equity"] == 111
+
+    resp_run = client.get("/api/live/status", params={"run_id": "abc"})
+    assert resp_run.status_code == 200
+    assert resp_run.json()["run_id"] == "abc"
+
+    client.post("/api/live/control", json={"command": "pause"})
+    written = json.loads(latest_path.read_text(encoding="utf-8"))
+    assert written.get("requested_action") == "pause"

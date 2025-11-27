@@ -50,7 +50,7 @@ export default function HomePage() {
     ruleParams,
     setRuleParams,
     lastRunMetrics,
-    scenarioPresets,
+    availableScenarioPresets,
     scenarioPreset,
     scenarioResults,
     runScenarioPreset,
@@ -63,9 +63,14 @@ export default function HomePage() {
     portfolioError,
     fetchPortfolioRuns,
     fetchPortfolioEquity,
+    liveStatus,
+    liveError,
+    isSendingLiveCommand,
+    fetchLiveStatus,
+    sendLiveCommand,
   } = useChartStore();
 
-  const [activeTab, setActiveTab] = useState<"single" | "portfolio">("single");
+  const [activeTab, setActiveTab] = useState<"single" | "portfolio" | "live">("single");
   const filteredRuns = useMemo(
     () => backtests.filter((run) => run.strategy === selectedStrategy),
     [backtests, selectedStrategy]
@@ -154,10 +159,43 @@ export default function HomePage() {
     loadTrades();
   }, [selectedRunId, setTrades]);
 
+  useEffect(() => {
+    if (activeTab !== "live") return;
+    fetchLiveStatus();
+    const id = setInterval(() => fetchLiveStatus(), 5000);
+    return () => clearInterval(id);
+  }, [activeTab, fetchLiveStatus]);
+
   return (
     <main className="min-h-screen px-6 py-4 flex flex-col gap-4 bg-slate-50">
-      <header className="flex items-center gap-4 flex-wrap">
-        <h1 className="text-xl font-bold">FinanTrade Chart</h1>
+      <div className="flex gap-3 border-b pb-2 text-sm">
+        <button
+          className={`px-2 ${activeTab === "single" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => setActiveTab("single")}
+        >
+          Single Backtests
+        </button>
+        <button
+          className={`px-2 ${activeTab === "portfolio" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => {
+            setActiveTab("portfolio");
+            fetchPortfolioRuns();
+          }}
+        >
+          Portfolio
+        </button>
+        <button
+          className={`px-2 ${activeTab === "live" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => setActiveTab("live")}
+        >
+          Live
+        </button>
+      </div>
+
+      {activeTab === "single" && (
+        <>
+          <header className="flex items-center gap-4 flex-wrap">
+            <h1 className="text-xl font-bold">FinanTrade Chart</h1>
 
         <label className="flex items-center gap-2 text-sm">
           <span>Symbol:</span>
@@ -211,7 +249,7 @@ export default function HomePage() {
 
         {lastError && (
           <div className="text-sm text-red-600">
-            Backtest Ã§alÄ±ÅŸtÄ±rÄ±lÄ±rken hata: {lastError}
+            Backtest calistirilirken hata: {lastError}
           </div>
         )}
 
@@ -461,6 +499,158 @@ export default function HomePage() {
           <LiveMonitor />
         </div>
       </div>
+        </>
+      )}
+
+      {activeTab === "portfolio" && (
+        <section className="space-y-3">
+          <div className="flex items-center gap-3 text-sm">
+            <select
+              className="border px-2 py-1 rounded"
+              value={selectedPortfolioRunId ?? ""}
+              onChange={(e) => fetchPortfolioEquity(e.target.value)}
+            >
+              {portfolioRuns.map((run) => (
+                <option key={run.run_id} value={run.run_id}>
+                  {run.run_id} ({run.symbols.join(", ")})
+                </option>
+              ))}
+            </select>
+            <button
+              className="px-3 py-1 border rounded"
+              onClick={() => selectedPortfolioRunId && fetchPortfolioEquity(selectedPortfolioRunId)}
+              disabled={!selectedPortfolioRunId || isLoadingPortfolioEquity}
+            >
+              {isLoadingPortfolioEquity ? "Loading..." : "Load"}
+            </button>
+            {portfolioError && <span className="text-red-600">{portfolioError}</span>}
+          </div>
+          <div className="rounded bg-white shadow p-4">
+            <h2 className="font-semibold mb-2 text-sm uppercase tracking-wider text-gray-500">Portfolio Equity</h2>
+            <p className="text-sm text-gray-600">Points: {portfolioEquity.length}</p>
+          </div>
+          {selectedPortfolioRunId && (
+            <div className="rounded bg-white shadow p-4">
+              <h3 className="font-semibold text-sm mb-2">Metrics</h3>
+              {(() => {
+                const run = portfolioRuns.find((r) => r.run_id === selectedPortfolioRunId);
+                if (!run) return <p className="text-sm text-gray-500">No metrics.</p>;
+                const m = run.metrics || {};
+                return (
+                  <ul className="text-sm space-y-1">
+                    <li>Final equity: {m.final_equity ?? "-"}</li>
+                    <li>
+                      Cum return:{" "}
+                      {m.cum_return !== null && m.cum_return !== undefined
+                        ? (m.cum_return * 100).toFixed(2) + "%"
+                        : "-"}
+                    </li>
+                    <li>
+                      Max DD:{" "}
+                      {m.max_drawdown !== null && m.max_drawdown !== undefined
+                        ? (m.max_drawdown * 100).toFixed(2) + "%"
+                        : "-"}
+                    </li>
+                    <li>Sharpe: {m.sharpe ?? "-"}</li>
+                  </ul>
+                );
+              })()}
+            </div>
+          )}
+        </section>
+      )}
+
+      {activeTab === "live" && (
+        <section className="space-y-3">
+          <div className="flex gap-2 text-sm">
+            <button
+              className="px-3 py-1 border rounded"
+              onClick={() => sendLiveCommand("pause")}
+              disabled={isSendingLiveCommand}
+            >
+              Pause
+            </button>
+            <button
+              className="px-3 py-1 border rounded"
+              onClick={() => sendLiveCommand("resume")}
+              disabled={isSendingLiveCommand}
+            >
+              Resume
+            </button>
+            <button
+              className="px-3 py-1 border rounded"
+              onClick={() => sendLiveCommand("flatten")}
+              disabled={isSendingLiveCommand}
+            >
+              Flatten
+            </button>
+            <button
+              className="px-3 py-1 border rounded"
+              onClick={() => sendLiveCommand("stop")}
+              disabled={isSendingLiveCommand}
+            >
+              Stop
+            </button>
+            {liveError && <span className="text-red-600">{liveError}</span>}
+          </div>
+
+          {liveStatus && (
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+              <div className="rounded bg-white shadow p-3">
+                <div className="text-gray-500 text-xs">Equity</div>
+                <div className="font-semibold">{liveStatus.equity.toFixed(2)}</div>
+              </div>
+              <div className="rounded bg-white shadow p-3">
+                <div className="text-gray-500 text-xs">Realized PnL</div>
+                <div className="font-semibold">{(liveStatus.realized_pnl ?? 0).toFixed(2)}</div>
+              </div>
+              <div className="rounded bg-white shadow p-3">
+                <div className="text-gray-500 text-xs">Unrealized PnL</div>
+                <div className="font-semibold">{(liveStatus.unrealized_pnl ?? 0).toFixed(2)}</div>
+              </div>
+              <div className="rounded bg-white shadow p-3">
+                <div className="text-gray-500 text-xs">Daily Realized</div>
+                <div className="font-semibold">{(liveStatus.daily_realized_pnl ?? 0).toFixed(2)}</div>
+              </div>
+            </div>
+          )}
+
+          {liveStatus && (
+            <div className="rounded bg-white shadow p-4">
+              <h3 className="font-semibold text-sm mb-2">Open Positions</h3>
+              <table className="w-full text-xs">
+                <thead>
+                  <tr className="text-left border-b">
+                    <th className="pr-2">Symbol</th>
+                    <th className="pr-2">Side</th>
+                    <th className="pr-2">Qty</th>
+                    <th className="pr-2">Entry</th>
+                    <th className="pr-2">PnL</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liveStatus.open_positions.map((p) => (
+                    <tr key={`${p.symbol}-${p.side}-${p.entry_price}`} className="border-b last:border-0">
+                      <td className="pr-2 py-1">{p.symbol}</td>
+                      <td className="pr-2">{p.side}</td>
+                      <td className="pr-2">{p.qty}</td>
+                      <td className="pr-2">{p.entry_price}</td>
+                      <td className="pr-2">{p.pnl?.toFixed?.(2) ?? "-"}</td>
+                    </tr>
+                  ))}
+                  {liveStatus.open_positions.length === 0 && (
+                    <tr>
+                      <td className="py-2 text-gray-500" colSpan={5}>
+                        No open positions.
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
     </main>
   );
 }

@@ -159,6 +159,10 @@ class PortfolioEquityPoint(BaseModel):
     portfolio_equity: float
 
 
+class LiveControlRequest(BaseModel):
+    command: str  # "pause", "resume", "stop", "flatten"
+    run_id: Optional[str] = None
+
 def _find_feature_file(symbol: str, timeframe: str) -> Path:
     root = Path(__file__).resolve().parents[2]
     candidates = [
@@ -665,5 +669,35 @@ def create_app() -> FastAPI:
                 )
             )
         return points
+
+    @app.post("/api/live/control")
+    def live_control(req: LiveControlRequest):
+        valid = {"pause", "resume", "stop", "flatten"}
+        if req.command not in valid:
+            raise HTTPException(status_code=400, detail="Invalid live command")
+
+        cfg = load_system_config()
+        live_cfg = cfg.get("live", {}) or {}
+        state_path = Path(
+            live_cfg.get(
+                "latest_state_path",
+                live_cfg.get("state_path", live_cfg.get("paper", {}).get("state_path", "outputs/live/live_state.json")),
+            )
+        )
+        state_path.parent.mkdir(parents=True, exist_ok=True)
+
+        state = {}
+        if state_path.is_file():
+            try:
+                state = json.loads(state_path.read_text(encoding="utf-8"))
+            except Exception:
+                state = {}
+
+        state["requested_action"] = req.command
+        if req.run_id is not None:
+            state["run_id"] = req.run_id
+
+        state_path.write_text(json.dumps(state), encoding="utf-8")
+        return {"status": "ok", "requested_action": req.command}
 
     return app

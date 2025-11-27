@@ -97,7 +97,7 @@ type ChartState = {
   symbol: string;
   timeframe: string;
   strategies: string[];
-  scenarioPresets: string[];
+  availableScenarioPresets: string[];
   selectedStrategy: string;
   backtests: BacktestRunInfo[];
   selectedRunId: string | null;
@@ -109,6 +109,7 @@ type ChartState = {
   liveStatus: LiveStatus | null;
   isLiveLoading: boolean;
   liveError: string | null;
+  isSendingLiveCommand: boolean;
   isRunningBacktest: boolean;
   lastError: string | null;
   lastRunId?: string;
@@ -173,6 +174,8 @@ type ChartState = {
   runScenarioPreset: (preset?: string) => Promise<void>;
   fetchPortfolioRuns: () => Promise<void>;
   fetchPortfolioEquity: (runId: string) => Promise<void>;
+  fetchLiveStatus: () => Promise<void>;
+  sendLiveCommand: (command: "pause" | "resume" | "stop" | "flatten") => Promise<void>;
   runBacktest: () => Promise<void>;
 };
 
@@ -180,7 +183,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   symbol: "AIAUSDT",
   timeframe: "15m",
   strategies: ["rule", "ml"],
-  scenarioPresets: [],
+  availableScenarioPresets: [],
   selectedStrategy: "rule",
   backtests: [],
   selectedRunId: null,
@@ -192,6 +195,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
   liveStatus: null,
   isLiveLoading: false,
   liveError: null,
+  isSendingLiveCommand: false,
   isRunningBacktest: false,
   lastError: null,
   lastRunId: undefined,
@@ -258,7 +262,7 @@ export const useChartStore = create<ChartState>((set, get) => ({
         availableSymbols: data.symbols,
         availableTimeframes: data.timeframes,
         availableStrategies: data.strategies,
-        scenarioPresets: data.scenario_presets,
+        availableScenarioPresets: data.scenario_presets,
         symbol,
         timeframe,
         strategies: data.strategies,
@@ -306,6 +310,28 @@ export const useChartStore = create<ChartState>((set, get) => ({
       set({ portfolioError: msg });
     } finally {
       set({ isLoadingPortfolioEquity: false });
+    }
+  },
+  fetchLiveStatus: async () => {
+    try {
+      const status = await getLiveStatus();
+      set({ liveStatus: status, liveError: null });
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail ?? err?.message ?? "Failed to load live status";
+      set({ liveError: msg });
+    }
+  },
+  sendLiveCommand: async (command) => {
+    set({ isSendingLiveCommand: true });
+    try {
+      await sendLiveControl({ command });
+      const status = await getLiveStatus();
+      set({ liveStatus: status, liveError: null });
+    } catch (err: any) {
+      const msg = err?.response?.data?.detail ?? err?.message ?? "Failed to send live command";
+      set({ liveError: msg });
+    } finally {
+      set({ isSendingLiveCommand: false });
     }
   },
   runBacktest: async () => {

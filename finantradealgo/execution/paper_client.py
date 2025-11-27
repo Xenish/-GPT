@@ -104,6 +104,13 @@ class PaperExecutionClient:
             }
         ]
 
+    def close_position_market(self, pos: Dict[str, Any]) -> Optional[Dict]:
+        price = self._last_price or pos.get("current_price") or pos.get("entry_price")
+        ts = self._last_timestamp or pd.Timestamp.utcnow()
+        if price is None:
+            return None
+        return self._close_position(price=price, timestamp=ts, reason="MANUAL_FLATTEN")
+
     # --------------
     # Order routing
     # --------------

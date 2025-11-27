@@ -136,3 +136,14 @@ export async function getPortfolioEquity(
   const res = await axios.get(`${API_BASE}/api/portfolio/equity/${runId}`);
   return res.data;
 }
+
+export async function getLiveStatus(runId?: string) {
+  const params = runId ? { run_id: runId } : undefined;
+  const res = await axios.get(`${API_BASE}/api/live/status`, { params });
+  return res.data;
+}
+
+export async function sendLiveControl(body: { command: string; run_id?: string }) {
+  const res = await axios.post(`${API_BASE}/api/live/control`, body);
+  return res.data;
+}

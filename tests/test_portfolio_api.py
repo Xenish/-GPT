@@ -35,6 +35,7 @@ def test_portfolio_backtests_and_equity(tmp_path, monkeypatch):
 
     # monkeypatch Path resolution inside server to use tmp_path
     monkeypatch.chdir(tmp_path)
+    monkeypatch.setattr("finantradealgo.api.server.load_system_config", lambda: {})
     client = TestClient(create_app())
 
     resp = client.get("/api/portfolio/backtests")

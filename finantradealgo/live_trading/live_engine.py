@@ -43,6 +43,9 @@ class LiveEngine:
         self.run_id = run_id or "live_engine"
         self.strategy_name = strategy_name
         self.pipeline_meta = pipeline_meta or {}
+        self.is_running: bool = True
+        self.is_paused: bool = False
+        self.requested_action: Optional[str] = None  # "pause", "resume", "stop", "flatten"
 
         self.price_col = "close"
         self.timestamp_col = "timestamp"
@@ -87,7 +90,7 @@ class LiveEngine:
         last_timestamp = pd.Timestamp.utcnow()
 
         try:
-            while True:
+            while self.is_running:
                 if bars_limit is not None and self.iteration >= bars_limit:
                     self.logger.info("Reached bars_limit=%s. Stopping loop.", bars_limit)
                     break
@@ -112,6 +115,15 @@ class LiveEngine:
                 last_timestamp = ts
                 self.last_bar_time = ts
                 self.execution_client.mark_to_market(price, ts)
+                self._load_requested_action()
+                self._apply_pending_action()
+                if not self.is_running:
+                    break
+                if self.is_paused:
+                    self.iteration += 1
+                    if self.save_state_every > 0 and self.iteration % self.save_state_every == 0:
+                        self._write_snapshot(ts)
+                    continue
 
                 day_key = ts.normalize()
                 portfolio_snapshot = self.execution_client.get_portfolio()
@@ -150,6 +162,35 @@ class LiveEngine:
         self.logger.info("Shutting down live engine run_id=%s.", self.run_id)
         self._write_snapshot(pd.Timestamp.utcnow())
 
+    def pause(self) -> None:
+        self.is_paused = True
+
+    def resume(self) -> None:
+        self.is_paused = False
+
+    def stop(self) -> None:
+        self.is_running = False
+
+    def flatten_all(self) -> None:
+        try:
+            positions = self.execution_client.get_open_positions()
+        except AttributeError:
+            positions = []
+        for pos in positions or []:
+            try:
+                if hasattr(self.execution_client, "close_position_market"):
+                    self.execution_client.close_position_market(pos)
+                else:
+                    # Fallback: submit close order using last price
+                    last_price = getattr(self.execution_client, "_last_price", None) or pos.get(
+                        "current_price", pos.get("entry_price")
+                    )
+                    ts = getattr(self.execution_client, "_last_timestamp", None) or pd.Timestamp.utcnow()
+                    self.execution_client.submit_order("CLOSE", price=last_price, size=pos.get("qty"), timestamp=ts)
+            except Exception:
+                self.logger.exception("Failed to flatten position: %s", pos)
+        self.requested_action = None
+
     def export_results(self) -> Dict[str, Path]:
         return self.execution_client.export_logs(timeframe=self.config.timeframe)
 
@@ -163,6 +204,30 @@ class LiveEngine:
     # -------------------
     # Internal utilities
     # -------------------
+    def _apply_pending_action(self) -> None:
+        action = self.requested_action
+        if not action:
+            return
+        if action == "pause":
+            self.pause()
+        elif action == "resume":
+            self.resume()
+        elif action == "stop":
+            self.stop()
+        elif action == "flatten":
+            self.flatten_all()
+        self.requested_action = None
+
+    def _load_requested_action(self) -> None:
+        try:
+            if self.latest_state_path.is_file():
+                state = json.loads(self.latest_state_path.read_text(encoding="utf-8"))
+                cmd = state.get("requested_action")
+                if cmd:
+                    self.requested_action = cmd
+        except Exception:
+            self.logger.exception("Failed to load requested_action from snapshot.")
+
     def _process_signal(
         self,
         signal,
@@ -282,6 +347,7 @@ class LiveEngine:
                 "blocked_entries": self.blocked_entries,
                 "executed_trades": self.executed_trades,
             },
+            "requested_action": self.requested_action,
         }
         for target in {self.state_path, self.latest_state_path}:
             with target.open("w", encoding="utf-8") as fh:

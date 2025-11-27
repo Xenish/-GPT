@@ -45,6 +45,7 @@ data/ holds fetched CSVs (15m OHLCV, funding, OI).
   - `GET /api/meta` returns symbols/timeframes/strategies from `config/system.yml`.
   - `POST /api/backtests/run` accepts optional `strategy_params` to override config (e.g., rule filters).
   - `POST /api/scenarios/run` executes a scenario preset from config and returns summary rows.
+  - Portfolio: `GET /api/portfolio/backtests` lists saved portfolio runs; `GET /api/portfolio/equity/{run_id}` returns equity points.
 - ML registry tooling
   - `scripts/run_list_models.py [--only-valid] [--only-symbol SYMBOL]` to inspect registry entries and artifacts.
   - `scripts/run_clean_registry.py [--prune-dirs]` to drop broken registry rows (and optionally delete missing dirs).
@@ -52,3 +53,31 @@ data/ holds fetched CSVs (15m OHLCV, funding, OI).
   - Dropdowns are populated via `/api/meta`.
   - Rule strategy has an “Advanced params” panel (ms_trend_min/max, use_ms_chop_filter) passed as `strategy_params`.
   - Backtest button shows inline success/error feedback; scenario panel can run presets and show a simple result table.
+
+## Portfolio backtest quickstart
+
+- CLI: `python scripts/run_portfolio_backtest_15m.py`
+  - Uses `portfolio` block in `config/system.yml` (symbols, timeframe, strategy, allocation).
+  - Outputs: `outputs/backtests/portfolio_*_equity.csv` and per-symbol equity CSVs, plus `outputs/trades/portfolio_*_trades.csv`.
+- API:
+  - `GET /api/portfolio/backtests` → list of runs with metrics (`final_equity`, `cum_return`, etc.).
+  - `GET /api/portfolio/equity/{run_id}` → equity curve points (`time`, `portfolio_equity`).
+
+## Strategy param override
+
+- Backend: `POST /api/backtests/run` supports `strategy_params` to override strategy config at call time:
+  ```json
+  {
+    "symbol": "AIAUSDT",
+    "timeframe": "15m",
+    "strategy": "rule",
+    "strategy_params": { "ms_trend_min": 1.5, "ms_trend_max": 4.0 }
+  }
+  ```
+- Frontend: Rule strategy “Advanced params” panel sends these overrides; behavior verified by API tests.
+
+## Scenario engine & meta
+
+- Presets are defined under `scenario.presets` in `config/system.yml`.
+- Run via `POST /api/scenarios/run` with `preset_name`.
+- Discover presets with `GET /api/meta` → `scenario_presets`, used by the frontend dropdown.

@@ -36,6 +36,11 @@ data:
   ohlcv_path_template: "data/ohlcv/{symbol}_{timeframe}.csv"
   flow_dir: "data/flow"
   sentiment_dir: "data/sentiment"
+  bars:
+    mode: "time"   # time | volume | dollar | tick
+    target_volume: 2000000
+    target_notional: null
+    target_ticks: null
 
 features:
   use_base: true

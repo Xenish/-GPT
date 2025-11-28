@@ -41,7 +41,7 @@ Requires-Dist: click>=8.0
 
 ## Kurulum
 ```bash
-git clone https://github.com/<you>/TradeProject.git
+git clone https://github.com/Xenish/TradeProject.git
 cd TradeProject
 
 python -m venv .venv

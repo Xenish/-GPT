@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from dataclasses import dataclass
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Literal
 
 import pandas as pd
 
@@ -18,6 +18,7 @@ class BacktestConfig:
     slippage_pct: float = 0.0005
     use_bar_extremes_for_stop: bool = True
     flip_on_opposite_signal: bool = True
+    bar_mode: Literal["time", "volume", "dollar", "tick"] = "time"
 
 
 class Backtester:

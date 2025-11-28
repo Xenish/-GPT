@@ -22,6 +22,9 @@ def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: s
 
 
 def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
+    import time
+
+    start_time = time.time()
     sys_cfg = load_system_config()
     cfg = dict(sys_cfg)
     if symbol:
@@ -33,7 +36,13 @@ def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
     resolved_symbol = cfg.get("symbol", "BTCUSDT")
     resolved_timeframe = cfg.get("timeframe", "15m")
 
+    print("[INFO] Building feature pipeline...")
     df_feat, pipeline_meta = build_feature_pipeline_from_system_config(cfg)
+    
+    end_time = time.time()
+    elapsed = end_time - start_time
+    print(f"[INFO] Feature pipeline built in {elapsed:.2f} seconds.")
+
     feature_cols = pipeline_meta.get("feature_cols", [])
     preset = pipeline_meta.get("feature_preset", cfg.get("features", {}).get("feature_preset", "extended"))
     pipeline_version = pipeline_meta.get("pipeline_version", "unknown")

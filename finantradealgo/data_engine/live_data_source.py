@@ -1,24 +1,12 @@
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
-from dataclasses import dataclass, field
+from dataclasses import field
 from typing import Optional
 
 import pandas as pd
 
-
-@dataclass
-class Bar:
-    symbol: str
-    timeframe: str
-    open_time: pd.Timestamp
-    close_time: pd.Timestamp
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
-    extras: dict = field(default_factory=dict)
+from finantradealgo.core.types import Bar
 
 
 class AbstractLiveDataSource(ABC):
@@ -102,15 +90,14 @@ class FileReplayDataSource(AbstractLiveDataSource):
         )
         extras = row.to_dict()
         return Bar(
-            symbol=self.symbol,
-            timeframe=self.timeframe,
-            open_time=open_time,
-            close_time=open_time,
+            ts=open_time,
             open=float(row.get("open", row.get("close"))),
             high=float(row.get("high", row.get("close"))),
             low=float(row.get("low", row.get("close"))),
             close=float(row.get("close")),
             volume=float(row.get("volume", 0.0)),
+            symbol=self.symbol,
+            timeframe=self.timeframe,
             extras=extras,
         )
 

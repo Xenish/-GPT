@@ -7,6 +7,9 @@ from typing import Dict, List, Optional, Sequence, Tuple
 
 import pandas as pd
 
+from finantradealgo.data_engine.event_bars import build_event_bars
+from finantradealgo.system.config_loader import EventBarConfig, DataConfig
+
 logger = logging.getLogger(__name__)
 
 
@@ -63,6 +66,9 @@ def load_ohlcv_csv(path: str, config: DataConfig | None = None) -> pd.DataFrame:
 
     df[config.timestamp_col] = pd.to_datetime(df[config.timestamp_col], utc=True)
     df = df.sort_values(config.timestamp_col).reset_index(drop=True)
+
+    if config and config.bars:
+        df = build_event_bars(df, config.bars)
 
     return df
 
@@ -188,6 +194,7 @@ def load_flow_features(
     *,
     flow_dir: str | Path | None = None,
     base_dir: str | Path = "data",
+    data_cfg: Optional[DataConfig] = None,
 ) -> Optional[pd.DataFrame]:
     base_path = Path(flow_dir) if flow_dir else Path(base_dir) / "flow"
     # Try combined files first
@@ -244,6 +251,7 @@ def load_sentiment_features(
     *,
     sentiment_dir: str | Path | None = None,
     base_dir: str | Path = "data",
+    data_cfg: Optional[DataConfig] = None,
 ) -> Optional[pd.DataFrame]:
     base_path = Path(sentiment_dir) if sentiment_dir else Path(base_dir) / "sentiment"
     for pattern in SENTIMENT_COMBINED_FILENAMES:

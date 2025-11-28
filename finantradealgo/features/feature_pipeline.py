@@ -22,20 +22,16 @@ from finantradealgo.features.multi_tf_features import (
     MultiTFConfig,
     add_multitf_1h_features,
 )
-from finantradealgo.features.market_structure_features import (
-    MarketStructureConfig,
-    add_market_structure_features_15m,
-)
-from finantradealgo.features.microstructure_features import (
-    MicrostructureFeatureConfig,
-    add_microstructure_features_15m,
-)
+from finantradealgo.features.market_structure_features import add_market_structure_features
+from finantradealgo.market_structure.config import MarketStructureConfig
+from finantradealgo.features.microstructure_features import add_microstructure_features
+from finantradealgo.microstructure.config import MicrostructureConfig
 from finantradealgo.features.osc_features import OscFeatureConfig, add_osc_features
 from finantradealgo.features.rule_signals import RuleSignalConfig, add_rule_signals_v1
 from finantradealgo.features.ta_features import TAFeatureConfig, add_ta_features
 from finantradealgo.features.flow_features import add_flow_features
 from finantradealgo.features.sentiment_features import add_sentiment_features
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_system_config, DataConfig
 
 PIPELINE_VERSION = "v1.0.0"
 logger = logging.getLogger(__name__)
@@ -48,14 +44,16 @@ class FeaturePipelineConfig:
     use_candles: bool = True
     use_osc: bool = True
     use_htf: bool = True
-    use_microstructure: bool = True
-    use_market_structure: bool = True
+    use_microstructure: bool = False
+    use_market_structure: bool = False
     use_external: bool = True
     use_rule_signals: bool = True
     use_flow_features: bool = False
     use_sentiment_features: bool = False
     drop_na: bool = True
     feature_preset: str = "extended"
+    bar_mode: str = "time" # For UI/info purposes, not directly used in pipeline logic
+
 
     rule_allowed_hours: Optional[List[int]] = None
     rule_allowed_weekdays: Optional[List[int]] = None
@@ -65,8 +63,8 @@ class FeaturePipelineConfig:
     candle_cfg: CandleFeatureConfig = field(default_factory=CandleFeatureConfig)
     osc_cfg: OscFeatureConfig = field(default_factory=OscFeatureConfig)
     mtf_cfg: MultiTFConfig = field(default_factory=MultiTFConfig)
-    micro_cfg: MicrostructureFeatureConfig = field(default_factory=MicrostructureFeatureConfig)
-    market_cfg: MarketStructureConfig = field(default_factory=MarketStructureConfig)
+    microstructure: MicrostructureConfig = field(default_factory=MicrostructureConfig)
+    market_structure: MarketStructureConfig = field(default_factory=MarketStructureConfig)
     rule_cfg: RuleSignalConfig = field(default_factory=RuleSignalConfig)
 
 
@@ -77,10 +75,11 @@ def build_feature_pipeline(
     csv_oi_path: Optional[str] = None,
     flow_df: Optional[pd.DataFrame] = None,
     sentiment_df: Optional[pd.DataFrame] = None,
+    data_cfg: Optional[DataConfig] = None, # New parameter
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     cfg = pipeline_cfg or FeaturePipelineConfig()
 
-    df = load_ohlcv_csv(csv_ohlcv_path)
+    df = load_ohlcv_csv(csv_ohlcv_path, config=data_cfg)
 
     if cfg.use_base:
         df = add_basic_features(df, cfg.feature_cfg)
@@ -98,10 +97,10 @@ def build_feature_pipeline(
         df = add_multitf_1h_features(df, cfg.mtf_cfg)
 
     if cfg.use_microstructure:
-        df = add_microstructure_features_15m(df, cfg.micro_cfg)
+        df = add_microstructure_features(df, cfg.microstructure)
 
     if cfg.use_market_structure:
-        df = add_market_structure_features_15m(df, cfg.market_cfg)
+        df = add_market_structure_features(df, cfg.market_structure)
 
     if cfg.use_external:
         funding_path = csv_funding_path if csv_funding_path else None
@@ -271,6 +270,7 @@ def build_feature_pipeline_from_system_config(
     flow_dir = data_section.get("flow_dir")
     sentiment_dir = data_section.get("sentiment_dir")
     base_data_dir = data_section.get("base_dir", "data")
+    data_cfg = DataConfig.from_dict(data_section) # Extract DataConfig from the loaded system config
 
     flow_df = None
     if fp_cfg.use_flow_features:
@@ -279,6 +279,7 @@ def build_feature_pipeline_from_system_config(
             resolved_timeframe,
             flow_dir=flow_dir,
             base_dir=base_data_dir,
+            data_cfg=data_cfg, # Pass data_cfg to load_flow_features
         )
         if flow_df is None or flow_df.empty:
             logger.warning(
@@ -293,6 +294,7 @@ def build_feature_pipeline_from_system_config(
             resolved_timeframe,
             sentiment_dir=sentiment_dir,
             base_dir=base_data_dir,
+            data_cfg=data_cfg, # Pass data_cfg to load_sentiment_features
         )
         if sentiment_df is None or sentiment_df.empty:
             logger.warning(
@@ -307,6 +309,7 @@ def build_feature_pipeline_from_system_config(
         csv_oi_path=str(csv_oi) if csv_oi.exists() else None,
         flow_df=flow_df,
         sentiment_df=sentiment_df,
+        data_cfg=data_cfg, # Pass data_cfg here
     )
 
     pipeline_meta["symbol"] = resolved_symbol

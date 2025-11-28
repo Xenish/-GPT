@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, List
+from typing import Any, Dict, Optional, List, Literal
 import os
 import yaml
 
@@ -19,6 +19,24 @@ def resolve_env_placeholders(value: Optional[str]) -> Optional[str]:
     return value
 
 @dataclass
+class EventBarConfig:
+    """Configuration for building event-based bars (e.g., volume, dollar)."""
+    mode: Literal["time", "volume", "dollar", "tick"] = "time"
+    target_volume: Optional[float] = None
+    target_notional: Optional[float] = None
+    target_ticks: Optional[int] = None
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "EventBarConfig":
+        data = data or {}
+        return cls(
+            mode=data.get("mode", cls.mode),
+            target_volume=data.get("target_volume"),
+            target_notional=data.get("target_notional"),
+            target_ticks=data.get("target_ticks"),
+        )
+
+@dataclass
 class ReplayConfig:
     bars_limit: Optional[int] = 500
     start_index: int = 0
@@ -31,6 +49,34 @@ class PaperConfig:
     save_state_every_n_bars: int = 25
     state_path: str = "outputs/live_state/paper_state.json"
     output_dir: str = "outputs/live_paper"
+
+
+@dataclass
+class DataConfig:
+    """Configuration for data sources and processing."""
+    ohlcv_dir: str = "data/ohlcv"
+    external_dir: str = "data/external"
+    features_dir: str = "data/features"
+    flow_dir: str = "data/flow"
+    sentiment_dir: str = "data/sentiment"
+    base_dir: str = "data"
+    ohlcv_path_template: str = "data/ohlcv/{symbol}_{timeframe}.csv"
+    bars: EventBarConfig = field(default_factory=EventBarConfig)
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "DataConfig":
+        data = data or {}
+        bars_cfg = EventBarConfig.from_dict(data.get("bars"))
+        return cls(
+            ohlcv_dir=data.get("ohlcv_dir", cls.ohlcv_dir),
+            external_dir=data.get("external_dir", cls.external_dir),
+            features_dir=data.get("features_dir", cls.features_dir),
+            flow_dir=data.get("flow_dir", cls.flow_dir),
+            sentiment_dir=data.get("sentiment_dir", cls.sentiment_dir),
+            base_dir=data.get("base_dir", cls.base_dir),
+            ohlcv_path_template=data.get("ohlcv_path_template", cls.ohlcv_path_template),
+            bars=bars_cfg,
+        )
 
 
 @dataclass

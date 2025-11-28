@@ -4,6 +4,7 @@ data:
 
 features:
   enabled: true
+  use_microstructure: true
   return_windows: [1, 3, 5, 10]
   vol_windows: [10, 20]
   ema_fast: 20

@@ -4,6 +4,7 @@ import pytest
 
 from finantradealgo.features.market_structure_features import (
     add_market_structure_features,
+    compute_market_structure_with_zones,
 )
 from finantradealgo.market_structure.config import MarketStructureConfig
 
@@ -24,7 +25,7 @@ def test_add_market_structure_features_integration():
     df_ohlcv = pd.DataFrame(data, index=pd.to_datetime(pd.date_range("2023-01-01", periods=num_bars, freq="15min")))
 
     cfg = MarketStructureConfig()
-    df_out, zones = add_market_structure_features(df_ohlcv, cfg)
+    df_out = add_market_structure_features(df_ohlcv, cfg)
 
     expected_cols = {
         "ms_swing_high", "ms_swing_low", "ms_trend_regime",
@@ -74,8 +75,10 @@ def test_market_structure_zones_are_identified():
     cfg.swing.min_swing_size_pct = 0.01 # 1%
     cfg.zone.min_touches = 2
     cfg.zone.price_proximity_pct = 0.02 # 2% proximity to cluster 100 and 100.5
-    
-    df_out, zones = add_market_structure_features(df, cfg)
+
+    result = compute_market_structure_with_zones(df, cfg)
+    df_out = pd.concat([df, result.features], axis=1)
+    zones = result.zones
 
     # 3. Assertions
     # A demand zone should have formed around price 100-102 from the first two lows.
@@ -121,7 +124,7 @@ def test_market_structure_golden_fixture():
 
     # 3. Run the engine on the input data
     cfg = MarketStructureConfig()  # Use default config
-    df_with_features, _ = add_market_structure_features(df_input, cfg)
+    df_with_features = add_market_structure_features(df_input, cfg)
     
     # 4. Isolate the market structure columns from the new output
     ms_cols = [col for col in df_with_features.columns if col.startswith("ms_")]

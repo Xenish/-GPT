@@ -2,7 +2,7 @@
 The main engine for computing all market structure features.
 """
 from dataclasses import dataclass
-from typing import List, Tuple
+from typing import List
 
 import numpy as np
 import pandas as pd
@@ -17,6 +17,19 @@ from .types import Zone
 
 
 @dataclass
+class MarketStructureResult:
+    """
+    Standardized output from MarketStructureEngine.
+
+    Attributes:
+        features: DataFrame with all market structure columns (ms_*)
+        zones: List of all active Zone objects (supply/demand)
+    """
+    features: pd.DataFrame
+    zones: List[Zone]
+
+
+@dataclass
 class MarketStructureEngine:
     """
     Orchestrates the calculation of all market structure features.
@@ -24,7 +37,7 @@ class MarketStructureEngine:
 
     cfg: MarketStructureConfig
 
-    def compute_df(self, df: pd.DataFrame) -> Tuple[pd.DataFrame, List[Zone]]:
+    def compute_df(self, df: pd.DataFrame) -> MarketStructureResult:
         """
         Computes all market structure features for a given OHLCV DataFrame.
 
@@ -32,9 +45,9 @@ class MarketStructureEngine:
             df: Input OHLCV DataFrame, expected to have a DatetimeIndex.
 
         Returns:
-            A tuple containing:
-            - A DataFrame with all market structure signal columns.
-            - A list of the Zone objects that were built.
+            MarketStructureResult containing:
+                - features: DataFrame with all market structure signal columns (ms_*)
+                - zones: List of all Zone objects (supply/demand)
         """
         out = pd.DataFrame(index=df.index)
 
@@ -96,4 +109,4 @@ class MarketStructureEngine:
         out["ms_zone_demand"] = demand_strength
         out["ms_zone_supply"] = supply_strength
 
-        return out, zones
+        return MarketStructureResult(features=out, zones=zones)

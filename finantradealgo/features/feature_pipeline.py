@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 import logging
 
 import pandas as pd
@@ -22,7 +22,10 @@ from finantradealgo.features.multi_tf_features import (
     MultiTFConfig,
     add_multitf_1h_features,
 )
-from finantradealgo.features.market_structure_features import add_market_structure_features
+from finantradealgo.features.market_structure_features import (
+    add_market_structure_features,
+    compute_market_structure_with_zones,
+)
 from finantradealgo.market_structure.config import MarketStructureConfig
 from finantradealgo.features.microstructure_features import add_microstructure_features
 from finantradealgo.microstructure.config import MicrostructureConfig
@@ -38,6 +41,27 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
+class FeaturePipelineResult:
+    """
+    Result from build_feature_pipeline containing DataFrame and metadata.
+
+    Attributes:
+        df: DataFrame with all features
+        meta: Metadata dictionary containing:
+            - feature_cols: List of feature column names
+            - feature_preset: Preset name used
+            - pipeline_version: Version string
+            - market_structure_zones: (optional) List of Zone objects if requested
+    """
+    df: pd.DataFrame
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+    def __iter__(self):
+        """Allow tuple unpacking for backward compatibility: df, meta = result"""
+        return iter((self.df, self.meta))
+
+
+@dataclass
 class FeaturePipelineConfig:
     use_base: bool = True
     use_ta: bool = True
@@ -46,6 +70,7 @@ class FeaturePipelineConfig:
     use_htf: bool = True
     use_microstructure: bool = False
     use_market_structure: bool = False
+    market_structure_return_zones: bool = False  # If True, zones are added to meta
     use_external: bool = True
     use_rule_signals: bool = True
     use_flow_features: bool = False
@@ -75,8 +100,8 @@ def build_feature_pipeline(
     csv_oi_path: Optional[str] = None,
     flow_df: Optional[pd.DataFrame] = None,
     sentiment_df: Optional[pd.DataFrame] = None,
-    data_cfg: Optional[DataConfig] = None, # New parameter
-) -> Tuple[pd.DataFrame, Dict[str, Any]]:
+    data_cfg: Optional[DataConfig] = None,
+) -> FeaturePipelineResult:
     cfg = pipeline_cfg or FeaturePipelineConfig()
 
     df = load_ohlcv_csv(csv_ohlcv_path, config=data_cfg)
@@ -99,8 +124,15 @@ def build_feature_pipeline(
     if cfg.use_microstructure:
         df = add_microstructure_features(df, cfg.microstructure)
 
+    meta: Dict[str, Any] = {}
+
     if cfg.use_market_structure:
-        df = add_market_structure_features(df, cfg.market_structure)
+        if cfg.market_structure_return_zones:
+            result = compute_market_structure_with_zones(df, cfg.market_structure)
+            df = pd.concat([df, result.features], axis=1)
+            meta["market_structure_zones"] = result.zones
+        else:
+            df = add_market_structure_features(df, cfg.market_structure)
 
     if cfg.use_external:
         funding_path = csv_funding_path if csv_funding_path else None
@@ -137,12 +169,13 @@ def build_feature_pipeline(
         df = df.dropna().reset_index(drop=True)
 
     feature_cols = get_feature_cols(df, preset=cfg.feature_preset)
-    pipeline_meta: Dict[str, Any] = {
+    meta.update({
         "feature_cols": feature_cols,
         "feature_preset": cfg.feature_preset,
         "pipeline_version": PIPELINE_VERSION,
-    }
-    return df, pipeline_meta
+    })
+
+    return FeaturePipelineResult(df=df, meta=meta)
 
 
 def get_feature_cols(df: pd.DataFrame, preset: str = "extended") -> List[str]:

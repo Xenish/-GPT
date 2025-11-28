@@ -48,12 +48,6 @@ SENTIMENT_COMBINED_FILENAMES = (
 )
 
 
-@dataclass
-class DataConfig:
-    timestamp_col: str = "timestamp"
-    tz: str | None = None
-
-
 def load_ohlcv_csv(path: str, config: DataConfig | None = None) -> pd.DataFrame:
     if config is None:
         config = DataConfig()
@@ -64,10 +58,13 @@ def load_ohlcv_csv(path: str, config: DataConfig | None = None) -> pd.DataFrame:
     if missing:
         raise ValueError(f"Missing required columns in {path}: {missing}")
 
-    df[config.timestamp_col] = pd.to_datetime(df[config.timestamp_col], utc=True)
-    df = df.sort_values(config.timestamp_col).reset_index(drop=True)
+    # Use timestamp_col if available, otherwise default to "timestamp"
+    timestamp_col = getattr(config, 'timestamp_col', 'timestamp')
+    df[timestamp_col] = pd.to_datetime(df[timestamp_col], utc=True)
+    df = df.sort_values(timestamp_col).reset_index(drop=True)
 
-    if config and config.bars:
+    # Apply event bars if configured
+    if config and hasattr(config, 'bars') and config.bars:
         df = build_event_bars(df, config.bars)
 
     return df

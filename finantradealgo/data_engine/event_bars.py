@@ -1,100 +1,107 @@
-"""
-Core functions for building event-based bars (e.g., volume, dollar, tick bars)
-from finer-granularity data like 1-minute bars or raw trades.
-"""
 import pandas as pd
-import numpy as np
-
-from finantradealgo.system.config_loader import EventBarConfig
-
+from typing import Literal, Optional
+from finantradealgo.core.config import EventBarConfig
 
 def build_event_bars(
-    df: pd.DataFrame,
+    df: pd.DataFrame,  # 1m veya trade-based OHLCV
     cfg: EventBarConfig,
 ) -> pd.DataFrame:
     """
-    Aggregates a DataFrame of finer-granularity bars (e.g., 1-minute OHLCV)
-    into event-based bars.
+    Builds event-based bars (volume, dollar, tick) from a DataFrame of OHLCV data.
 
     Args:
-        df: Input DataFrame, must have 'timestamp', 'open', 'high', 'low',
-            'close', and 'volume' columns. It is assumed to be sorted by time.
-        cfg: The configuration for event bar generation.
+        df (pd.DataFrame): Input DataFrame with OHLCV data, typically 1-minute bars
+                           or trade-level data. Expected columns: 'open', 'high',
+                           'low', 'close', 'volume'. The index should be a datetime.
+        cfg (EventBarConfig): Configuration for event bar generation.
 
     Returns:
-        A new DataFrame with bars aggregated according to the specified mode.
-        Returns the original DataFrame if mode is 'time'.
+        pd.DataFrame: DataFrame of event-based bars.
     """
     if cfg.mode == "time":
         return df
 
+    if cfg.mode == "time":
+        return df
+    
     if df.empty:
-        return pd.DataFrame()
+        return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'bar_start_ts', 'bar_end_ts'])
 
-    # Ensure timestamp is a column for processing
-    if df.index.name == 'timestamp':
-        df = df.reset_index()
+    bars_data = []
+    current_bar_open = None
+    current_bar_high = -float('inf')
+    current_bar_low = float('inf')
+    current_bar_close = None
+    current_bar_volume = 0.0
+    current_bar_notional = 0.0
+    current_bar_ticks = 0
+    bar_start_ts = None
+    bar_end_ts = None
 
-    event_bars = []
-    
-    threshold = 0
-    metric_col = ''
-    if cfg.mode == 'volume':
-        threshold = cfg.target_volume
-        metric_col = 'volume'
-    elif cfg.mode == 'dollar':
-        threshold = cfg.target_notional
-        df['notional'] = df['close'] * df['volume']
-        metric_col = 'notional'
-    elif cfg.mode == 'tick':
-        threshold = cfg.target_ticks
-        df['ticks'] = 1 # Each row is one "tick"
-        metric_col = 'ticks'
-    else:
-        raise ValueError(f"Unsupported event bar mode: {cfg.mode}")
+    for index, row in df.iterrows():
+        # Ensure 'volume' and 'close' columns exist
+        if 'volume' not in row or 'close' not in row:
+            raise ValueError("DataFrame must contain 'volume' and 'close' columns for event bars.")
 
-    if not threshold or threshold <= 0:
-        raise ValueError(f"Target for mode '{cfg.mode}' must be a positive number.")
+        if bar_start_ts is None:
+            bar_start_ts = index
 
-    # Loop through the input DataFrame to build bars
-    current_bar_start_idx = 0
-    cumulative_metric = 0.0
+        current_bar_close = row['close']
+        bar_end_ts = index
 
-    for i in range(len(df)):
-        cumulative_metric += df[metric_col].iloc[i]
+        if current_bar_open is None:
+            current_bar_open = row['open']
+        current_bar_high = max(current_bar_high, row['high'])
+        current_bar_low = min(current_bar_low, row['low'])
+        current_bar_volume += row['volume']
+        current_bar_notional += row['close'] * row['volume'] # Assuming close * volume for notional
+        current_bar_ticks += 1 # Each row is considered a tick for tick bar calculation
 
-        if cumulative_metric >= threshold:
-            bar_slice = df.iloc[current_bar_start_idx : i + 1]
-            
-            bar_open = bar_slice['open'].iloc[0]
-            bar_high = bar_slice['high'].max()
-            bar_low = bar_slice['low'].min()
-            bar_close = bar_slice['close'].iloc[-1]
-            bar_volume = bar_slice['volume'].sum()
-            
-            bar_start_ts = bar_slice['timestamp'].iloc[0]
-            bar_end_ts = bar_slice['timestamp'].iloc[-1]
+        should_close_bar = False
+        if cfg.mode == "volume" and cfg.target_volume is not None:
+            if current_bar_volume >= cfg.target_volume:
+                should_close_bar = True
+        elif cfg.mode == "dollar" and cfg.target_notional is not None:
+            if current_bar_notional >= cfg.target_notional:
+                should_close_bar = True
+        elif cfg.mode == "tick" and cfg.target_ticks is not None:
+            if current_bar_ticks >= cfg.target_ticks:
+                should_close_bar = True
 
-            event_bars.append({
-                'timestamp': bar_end_ts,
-                'open': bar_open,
-                'high': bar_high,
-                'low': bar_low,
-                'close': bar_close,
-                'volume': bar_volume,
+        if should_close_bar:
+            bars_data.append({
+                'open': current_bar_open,
+                'high': current_bar_high,
+                'low': current_bar_low,
+                'close': current_bar_close,
+                'volume': current_bar_volume,
                 'bar_start_ts': bar_start_ts,
-                'bar_end_ts': bar_end_ts,
+                'bar_end_ts': bar_end_ts
             })
-            
             # Reset for next bar
-            current_bar_start_idx = i + 1
-            cumulative_metric = 0.0
+            current_bar_open = None
+            current_bar_high = -float('inf')
+            current_bar_low = float('inf')
+            current_bar_close = None
+            current_bar_volume = 0.0
+            current_bar_notional = 0.0
+            current_bar_ticks = 0
+            bar_start_ts = None
+            bar_end_ts = None
 
-    if not event_bars:
-        return pd.DataFrame()
+    # Handle any remaining data as a final bar if it exists
+    if bar_start_ts is not None and current_bar_volume > 0: # Check volume or ticks/notional
+        bars_data.append({
+            'open': current_bar_open,
+            'high': current_bar_high,
+            'low': current_bar_low,
+            'close': current_bar_close,
+            'volume': current_bar_volume,
+            'bar_start_ts': bar_start_ts,
+            'bar_end_ts': bar_end_ts
+        })
 
-    # Create final DataFrame and set index
-    result_df = pd.DataFrame(event_bars)
-    result_df.set_index('timestamp', inplace=True)
-    
-    return result_df
+    event_bars_df = pd.DataFrame(bars_data)
+    if not event_bars_df.empty:
+        event_bars_df.set_index('bar_end_ts', inplace=True)
+    return event_bars_df

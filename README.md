@@ -134,7 +134,21 @@ tests/
 outputs/
 ```
 
+## 📚 Dokümantasyon
+
+Kapsamlı Türkçe dokümantasyon için:
+
+**[📖 Dokümantasyon Ana Sayfa](docs/README.md)**
+
+### Hızlı Linkler
+- 🚀 **[Hızlı Başlangıç](docs/kullanici/01-hizli-baslangic.md)** - 15 dakikada sistemi çalıştırın
+- 📘 **[Kullanıcı Kılavuzu](docs/README.md#-kullanc-klavuzu)** - Sistemi nasıl kullanırsınız
+- 🔧 **[Strateji Geliştirici Kılavuzu](docs/README.md#-strateji-gelitirici-klavuzu)** - Özel stratejiler geliştirin
+- ⚙️ **[Konfigürasyon Referansı](docs/konfigürasyon/)** - Tüm parametreler
+- 📖 **[Örnekler](docs/ornekler/)** - Adım adım uygulamalar
+- 🌐 **[API Dokümantasyonu](docs/api/)** - REST API kullanımı
+
 ## Notlar
 - Bu depo araştırma ve prototipleme amaçlıdır; **production trading riski size aittir.**
 - Binance / diğer veri kaynakları için rate limit / API key / mevzuat sorumluluğu size aittir.
-- Gönderilen CLI (`finantrade ...`) tüm temel script’leri tek çatı altında toplar.
+- Gönderilen CLI (`finantrade ...`) tüm temel script'leri tek çatı altında toplar.

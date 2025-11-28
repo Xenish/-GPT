@@ -41,6 +41,11 @@ data:
     target_volume: 2000000
     target_notional: null
     target_ticks: null
+  day_type:
+    trend_body_to_range_min: 0.6
+    range_body_to_range_max: 0.4
+    liquidation_wick_to_range_min: 0.5
+    liquidation_volume_z: 2.0
 
 features:
   use_base: true

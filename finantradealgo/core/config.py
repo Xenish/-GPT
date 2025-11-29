@@ -7,6 +7,8 @@ class EventBarConfig:
     target_volume: Optional[float] = None
     target_notional: Optional[float] = None
     target_ticks: Optional[int] = None
+    source_timeframe: Optional[str] = None  # Expected source data timeframe (e.g., "1m")
+    keep_partial_last_bar: bool = False  # Whether to keep incomplete final bar
 
 @dataclass
 class DayTypeConfig:

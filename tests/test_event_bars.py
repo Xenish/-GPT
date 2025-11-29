@@ -27,9 +27,9 @@ def test_build_event_bars_time_mode(sample_ohlcv_df):
     pd.testing.assert_frame_equal(result_df, sample_ohlcv_df)
 
 def test_build_event_bars_volume_mode(sample_ohlcv_df):
-    """Test build_event_bars in 'volume' mode."""
+    """Test build_event_bars in 'volume' mode with partial last bar kept."""
     target_volume = 50
-    cfg = EventBarConfig(mode="volume", target_volume=target_volume)
+    cfg = EventBarConfig(mode="volume", target_volume=target_volume, keep_partial_last_bar=True)
     result_df = build_event_bars(sample_ohlcv_df, cfg)
 
     # Expected bars based on target_volume = 50
@@ -51,15 +51,15 @@ def test_build_event_bars_volume_mode(sample_ohlcv_df):
     # 5. Row 4 (vol=30): current_vol=30.
     # 6. Row 5 (vol=12): current_vol=42.
     # 7. Row 6 (vol=18): current_vol=60. >= 50. CLOSE BAR.
-    #    Bar 2: Open=104, High=106, Low=103, Close=106, Volume=60. Start=09:04, End=09:06
+    #    Bar 2: Open=104, High=107, Low=103, Close=107, Volume=60. Start=09:04, End=09:06
     # 8. Row 7 (vol=22): current_vol=22.
     # 9. Row 8 (vol=11): current_vol=33.
     # 10. Row 9 (vol=28): current_vol=61. >= 50. CLOSE BAR.
-    #    Bar 3: Open=107, High=109, Low=106, Close=109, Volume=61. Start=09:07, End=09:09
+    #    Bar 3: Open=107, High=110, Low=106, Close=110, Volume=61. Start=09:07, End=09:09
     # 11. Row 10 (vol=35): current_vol=35.
     # 12. Row 11 (vol=14): current_vol=49.
     # 13. Row 12 (vol=19): current_vol=68. >= 50. CLOSE BAR.
-    #    Bar 4: Open=110, High=112, Low=109, Close=112, Volume=68. Start=09:10, End=09:12
+    #    Bar 4: Open=110, High=113, Low=109, Close=113, Volume=68. Start=09:10, End=09:12
     # 14. Row 13 (vol=21): current_vol=21.
     # 15. Row 14 (vol=26): current_vol=47. END OF DF.
     #    Bar 5: Open=113, High=115, Low=112, Close=115, Volume=47. Start=09:13, End=09:14 (Last incomplete bar)
@@ -67,11 +67,11 @@ def test_build_event_bars_volume_mode(sample_ohlcv_df):
     expected_data = [
         {'open': 100, 'high': 104, 'low': 99, 'close': 104, 'volume': 70.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 0, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 3, 0)},
-        {'open': 104, 'high': 106, 'low': 103, 'close': 106, 'volume': 60.0,
+        {'open': 104, 'high': 107, 'low': 103, 'close': 107, 'volume': 60.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 4, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 6, 0)},
-        {'open': 107, 'high': 109, 'low': 106, 'close': 109, 'volume': 61.0,
+        {'open': 107, 'high': 110, 'low': 106, 'close': 110, 'volume': 61.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 7, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 9, 0)},
-        {'open': 110, 'high': 112, 'low': 109, 'close': 112, 'volume': 68.0,
+        {'open': 110, 'high': 113, 'low': 109, 'close': 113, 'volume': 68.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 10, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 12, 0)},
         {'open': 113, 'high': 115, 'low': 112, 'close': 115, 'volume': 47.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 13, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 14, 0)},
@@ -80,9 +80,9 @@ def test_build_event_bars_volume_mode(sample_ohlcv_df):
     pd.testing.assert_frame_equal(result_df, expected_df)
 
 def test_build_event_bars_dollar_mode(sample_ohlcv_df):
-    """Test build_event_bars in 'dollar' mode."""
+    """Test build_event_bars in 'dollar' mode with partial last bar kept."""
     target_notional = 5000
-    cfg = EventBarConfig(mode="dollar", target_notional=target_notional)
+    cfg = EventBarConfig(mode="dollar", target_notional=target_notional, keep_partial_last_bar=True)
     result_df = build_event_bars(sample_ohlcv_df, cfg)
 
     # Notional: [1010, 2040, 1545, 2600, 3150, 1272, 1908, 2376, 1200, 3080, 3885, 1554, 2147, 2394, 2990]
@@ -117,11 +117,11 @@ def test_build_event_bars_dollar_mode(sample_ohlcv_df):
     expected_data = [
         {'open': 100, 'high': 104, 'low': 99, 'close': 104, 'volume': 70.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 0, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 3, 0)},
-        {'open': 104, 'high': 106, 'low': 103, 'close': 106, 'volume': 60.0,
+        {'open': 104, 'high': 107, 'low': 103, 'close': 107, 'volume': 60.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 4, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 6, 0)},
-        {'open': 107, 'high': 109, 'low': 106, 'close': 109, 'volume': 61.0,
+        {'open': 107, 'high': 110, 'low': 106, 'close': 110, 'volume': 61.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 7, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 9, 0)},
-        {'open': 110, 'high': 111, 'low': 109, 'close': 111, 'volume': 49.0,
+        {'open': 110, 'high': 112, 'low': 109, 'close': 112, 'volume': 49.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 10, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 11, 0)},
         {'open': 112, 'high': 115, 'low': 111, 'close': 115, 'volume': 66.0,
          'bar_start_ts': datetime(2023, 1, 1, 9, 12, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 14, 0)},
@@ -142,11 +142,11 @@ def test_build_event_bars_tick_mode(sample_ohlcv_df):
     # Bar 3: Rows 10-14 (5 ticks)
 
     expected_data = [
-        {'open': 100, 'high': 104, 'low': 99, 'close': 104, 'volume': 10+20+15+25+30,
+        {'open': 100, 'high': 105, 'low': 99, 'close': 105, 'volume': float(10+20+15+25+30),
          'bar_start_ts': datetime(2023, 1, 1, 9, 0, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 4, 0)},
-        {'open': 105, 'high': 109, 'low': 104, 'close': 109, 'volume': 12+18+22+11+28,
+        {'open': 105, 'high': 110, 'low': 104, 'close': 110, 'volume': float(12+18+22+11+28),
          'bar_start_ts': datetime(2023, 1, 1, 9, 5, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 9, 0)},
-        {'open': 110, 'high': 114, 'low': 109, 'close': 114, 'volume': 35+14+19+21+26,
+        {'open': 110, 'high': 115, 'low': 109, 'close': 115, 'volume': float(35+14+19+21+26),
          'bar_start_ts': datetime(2023, 1, 1, 9, 10, 0), 'bar_end_ts': datetime(2023, 1, 1, 9, 14, 0)},
     ]
     expected_df = pd.DataFrame(expected_data).set_index('bar_end_ts')
@@ -175,9 +175,9 @@ def test_build_event_bars_no_target_volume_raises_error(sample_ohlcv_df):
 
 def test_build_event_bars_not_enough_data_for_bar(sample_ohlcv_df):
     """Test scenario where data is not enough to form a complete bar (volume mode)."""
-    cfg = EventBarConfig(mode="volume", target_volume=1000) # Very high target
+    cfg = EventBarConfig(mode="volume", target_volume=1000, keep_partial_last_bar=True) # Very high target
     result_df = build_event_bars(sample_ohlcv_df, cfg)
-    # Expect only one bar for the remaining data, if any
+    # Expect only one bar for the remaining data when keep_partial_last_bar=True
     # The last bar handling logic captures this.
     assert len(result_df) == 1
     assert result_df['volume'].iloc[0] == sample_ohlcv_df['volume'].sum()

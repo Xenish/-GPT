@@ -3,7 +3,9 @@
     "allow": [
       "Bash(find:*)",
       "Bash(python -m pytest:*)",
-      "Bash(python:*)"
+      "Bash(python:*)",
+      "Bash(if not exist \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\" mkdir \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\")",
+      "Bash(cmd /c:*)"
     ],
     "deny": [],
     "ask": []

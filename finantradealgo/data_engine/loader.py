@@ -65,6 +65,24 @@ def load_ohlcv_csv(path: str, config: DataConfig | None = None) -> pd.DataFrame:
 
     # Apply event bars if configured
     if config and hasattr(config, 'bars') and config.bars:
+        # Validate timeframe for non-time event bars
+        if config.bars.mode in ("volume", "dollar", "tick"):
+            source_tf = config.bars.source_timeframe
+            if source_tf and source_tf != "1m":
+                raise ValueError(
+                    f"Event bars (mode={config.bars.mode}) should be built from 1m data. "
+                    f"Got source_timeframe={source_tf}. "
+                    f"Non-time event bars require high-resolution (1m) data to accurately "
+                    f"capture volume, dollar, or tick thresholds."
+                )
+            elif source_tf is None:
+                logger.warning(
+                    "Event bars mode=%s enabled but source_timeframe not specified in config. "
+                    "Event bars ideally should be built from 1m data. "
+                    "Set bars.source_timeframe='1m' in your config to suppress this warning.",
+                    config.bars.mode
+                )
+
         df = build_event_bars(df, config.bars)
 
     return df

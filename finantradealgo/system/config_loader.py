@@ -25,6 +25,8 @@ class EventBarConfig:
     target_volume: Optional[float] = None
     target_notional: Optional[float] = None
     target_ticks: Optional[int] = None
+    source_timeframe: Optional[str] = None  # Expected source data timeframe (e.g., "1m")
+    keep_partial_last_bar: bool = False  # Whether to keep incomplete final bar
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "EventBarConfig":
@@ -34,6 +36,8 @@ class EventBarConfig:
             target_volume=data.get("target_volume"),
             target_notional=data.get("target_notional"),
             target_ticks=data.get("target_ticks"),
+            source_timeframe=data.get("source_timeframe"),
+            keep_partial_last_bar=bool(data.get("keep_partial_last_bar", cls.keep_partial_last_bar)),
         )
 
 @dataclass

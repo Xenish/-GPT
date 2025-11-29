@@ -85,14 +85,27 @@ def compute_microstructure_df(
     if trades_df is not None and not trades_df.empty:
         # This implementation iterates over bars, which is not fully vectorized.
         # It's a starting point for integration.
-        
-        # Infer timeframe for bar end calculation. This is a simplification.
-        # A more robust solution would pass the timeframe explicitly.
-        timeframe_delta = df.index.to_series().diff().min()
+
+        # Check if DataFrame has explicit bar timestamps (from event bars)
+        has_bar_start_col = 'bar_start_ts' in df.columns
+        has_bar_end_col = 'bar_end_ts' in df.columns
+        has_explicit_bounds = has_bar_start_col  # bar_end_ts is typically the index
+
+        if not has_explicit_bounds:
+            # Fallback for regular time bars: infer timeframe from index differences
+            timeframe_delta = df.index.to_series().diff().min()
 
         def sweep_for_bar(bar):
-            bar_start_ts = bar.name  # Assuming index is the timestamp
-            bar_end_ts = bar_start_ts + timeframe_delta
+            if has_explicit_bounds:
+                # Use explicit bar timestamps from event bars
+                bar_start_ts = bar['bar_start_ts']
+                # bar_end_ts can be either a column or the index
+                bar_end_ts = bar['bar_end_ts'] if has_bar_end_col else bar.name
+            else:
+                # Fallback for regular time bars
+                bar_start_ts = bar.name  # Assuming index is the timestamp
+                bar_end_ts = bar_start_ts + timeframe_delta
+
             return detect_liquidity_sweep(
                 bar.open, bar.close, bar_start_ts, bar_end_ts, trades_df, cfg.sweep
             )

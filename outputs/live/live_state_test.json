@@ -6,8 +6,8 @@
   "mode": "replay",
   "status": "RUNNING",
   "start_time": null,
-  "last_bar_time": "2025-11-27T16:42:29.590486+00:00",
-  "last_bar_time_ts": 1764261749.590486,
+  "last_bar_time": "2025-11-29T06:53:07.866327+00:00",
+  "last_bar_time_ts": 1764399187.866327,
   "equity": 1000,
   "realized_pnl": 0.0,
   "unrealized_pnl": 0.0,
@@ -23,6 +23,9 @@
   "stale_data_seconds": null,
   "ws_reconnect_count": 0,
   "last_orders": [],
-  "timestamp": 1764261749.590551,
+  "timestamp": 1764399187.8663902,
+  "kill_switch_triggered": false,
+  "kill_switch_reason": null,
+  "kill_switch_ts": null,
   "kill_switch": null
 }

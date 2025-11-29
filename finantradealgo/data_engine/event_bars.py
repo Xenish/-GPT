@@ -21,8 +21,13 @@ def build_event_bars(
     if cfg.mode == "time":
         return df
 
-    if cfg.mode == "time":
-        return df
+    # Validate that required targets are set for non-time modes
+    if cfg.mode == "volume" and cfg.target_volume is None:
+        return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'bar_start_ts', 'bar_end_ts'])
+    if cfg.mode == "dollar" and cfg.target_notional is None:
+        return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'bar_start_ts', 'bar_end_ts'])
+    if cfg.mode == "tick" and cfg.target_ticks is None:
+        return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'bar_start_ts', 'bar_end_ts'])
     
     if df.empty:
         return pd.DataFrame(columns=['open', 'high', 'low', 'close', 'volume', 'bar_start_ts', 'bar_end_ts'])
@@ -89,8 +94,8 @@ def build_event_bars(
             bar_start_ts = None
             bar_end_ts = None
 
-    # Handle any remaining data as a final bar if it exists
-    if bar_start_ts is not None and current_bar_volume > 0: # Check volume or ticks/notional
+    # Handle any remaining data as a final bar if configured to keep it
+    if cfg.keep_partial_last_bar and bar_start_ts is not None and current_bar_volume > 0:
         bars_data.append({
             'open': current_bar_open,
             'high': current_bar_high,

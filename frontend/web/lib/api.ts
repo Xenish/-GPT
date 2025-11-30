@@ -95,11 +95,19 @@ export async function runBacktest(
   };
 }
 
+export type MLTarget = {
+  symbol: string;
+  timeframe: string;
+};
+
 export async function getMeta(): Promise<{
   symbols: string[];
   timeframes: string[];
   strategies: string[];
   scenario_presets: string[];
+  lookback_days?: Record<string, number>;
+  default_lookback_days?: number;
+  ml_targets?: MLTarget[];
 }> {
   const res = await api.get(`/meta`);
   return res.data;

@@ -30,6 +30,8 @@ def compute_microstructure_df(
         df: Input DataFrame with OHLCV data (must have a datetime index).
         cfg: Configuration for the microstructure signals.
         trades_df: Optional DataFrame with trade data.
+                   Must have DatetimeIndex if provided.
+                   Columns: side, price, size
         book_df: Optional DataFrame with order book snapshot data.
 
     Returns:

@@ -105,13 +105,17 @@ def run_backtest_once(
 ) -> Dict[str, Any]:
     cfg = cfg or load_system_config()
     cfg_local = deepcopy(cfg)
-    cfg_local["symbol"] = symbol
-    cfg_local["timeframe"] = timeframe
     if strategy_params:
         strategy_cfg = cfg_local.setdefault("strategy", {}).setdefault(strategy_name, {})
         strategy_cfg.update(strategy_params)
 
-    df_features, pipeline_meta = build_feature_pipeline_from_system_config(cfg_local)
+    # Build features with explicit symbol/timeframe parameters
+    # Lookback filtering is handled automatically by load_ohlcv_for_symbol_tf
+    df_features, pipeline_meta = build_feature_pipeline_from_system_config(
+        cfg_local,
+        symbol=symbol,
+        timeframe=timeframe,
+    )
 
     strategy = create_strategy(strategy_name, cfg_local)
 

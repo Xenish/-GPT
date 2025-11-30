@@ -65,6 +65,10 @@ class DataConfig:
     sentiment_dir: str = "data/sentiment"
     base_dir: str = "data"
     ohlcv_path_template: str = "data/ohlcv/{symbol}_{timeframe}.csv"
+    symbols: List[str] = field(default_factory=list)
+    timeframes: List[str] = field(default_factory=list)
+    lookback_days: Dict[str, int] = field(default_factory=dict)
+    default_lookback_days: int = 365
     bars: EventBarConfig = field(default_factory=EventBarConfig)
 
     @classmethod
@@ -79,6 +83,10 @@ class DataConfig:
             sentiment_dir=data.get("sentiment_dir", cls.sentiment_dir),
             base_dir=data.get("base_dir", cls.base_dir),
             ohlcv_path_template=data.get("ohlcv_path_template", cls.ohlcv_path_template),
+            symbols=data.get("symbols", []),
+            timeframes=data.get("timeframes", []),
+            lookback_days=data.get("lookback_days", {}),
+            default_lookback_days=data.get("default_lookback_days", cls.default_lookback_days),
             bars=bars_cfg,
         )
 
@@ -608,6 +616,33 @@ def _deep_merge(base: Dict[str, Any], override: Dict[str, Any]) -> Dict[str, Any
     return result
 
 
+def _propagate_source_timeframe(data_cfg: DataConfig, global_timeframe: str) -> DataConfig:
+    """
+    Propagate global timeframe to EventBarConfig.source_timeframe if not explicitly set.
+
+    For event-based bars (volume, dollar, tick), the source_timeframe should match
+    the global timeframe unless explicitly overridden by the user.
+
+    Raises:
+        ValueError: If event bars are configured with a non-1m timeframe
+    """
+    bars_cfg = data_cfg.bars
+    if bars_cfg and bars_cfg.mode in ("volume", "dollar", "tick"):
+        # If user hasn't specified source_timeframe, use global timeframe
+        if bars_cfg.source_timeframe is None:
+            bars_cfg.source_timeframe = global_timeframe
+
+        # Validate that event bars only use 1m data
+        if bars_cfg.source_timeframe != "1m":
+            raise ValueError(
+                f"Event bars (mode={bars_cfg.mode!r}) currently only supported from 1m data. "
+                f"Got source_timeframe={bars_cfg.source_timeframe!r}. "
+                f"Please set timeframe='1m' in your system config when using event bars, "
+                f"or set data.bars.mode='time' for higher timeframes."
+            )
+    return data_cfg
+
+
 def load_system_config(path: str = "config/system.yml") -> Dict[str, Any]:
     """
     Load the project-level system configuration and fill any missing fields
@@ -631,6 +666,14 @@ def load_system_config(path: str = "config/system.yml") -> Dict[str, Any]:
         default_timeframe=merged.get("timeframe"),
     )
     merged["notifications_cfg"] = NotificationsConfig.from_dict(merged.get("notifications", {}))
+
+    # Create DataConfig and propagate source_timeframe for event bars
+    merged["data_cfg"] = DataConfig.from_dict(merged.get("data", {}))
+    merged["data_cfg"] = _propagate_source_timeframe(
+        merged["data_cfg"],
+        merged.get("timeframe", "15m")
+    )
+
     return merged
 
 
@@ -655,6 +698,8 @@ def load_exchange_credentials(cfg: ExchangeConfig) -> tuple[str, str]:
 
 __all__ = [
     "load_system_config",
+    "DataConfig",
+    "EventBarConfig",
     "LiveConfig",
     "ReplayConfig",
     "PaperConfig",

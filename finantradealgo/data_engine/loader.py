@@ -48,7 +48,22 @@ SENTIMENT_COMBINED_FILENAMES = (
 )
 
 
-def load_ohlcv_csv(path: str, config: DataConfig | None = None) -> pd.DataFrame:
+def load_ohlcv_csv(
+    path: str,
+    config: DataConfig | None = None,
+    lookback_days: int | None = None,
+) -> pd.DataFrame:
+    """
+    Load OHLCV data from CSV with optional lookback filtering.
+
+    Args:
+        path: Path to CSV file
+        config: DataConfig for event bars and other settings
+        lookback_days: If provided, filter data to last N days from now
+
+    Returns:
+        DataFrame with OHLCV data
+    """
     if config is None:
         config = DataConfig()
 
@@ -63,29 +78,65 @@ def load_ohlcv_csv(path: str, config: DataConfig | None = None) -> pd.DataFrame:
     df[timestamp_col] = pd.to_datetime(df[timestamp_col], utc=True)
     df = df.sort_values(timestamp_col).reset_index(drop=True)
 
+    # Apply lookback filter if specified
+    if lookback_days is not None:
+        cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(days=lookback_days)
+        df = df[df[timestamp_col] >= cutoff].reset_index(drop=True)
+        logger.info(f"Applied lookback filter: {lookback_days} days, {len(df)} bars retained")
+
     # Apply event bars if configured
     if config and hasattr(config, 'bars') and config.bars:
         # Validate timeframe for non-time event bars
         if config.bars.mode in ("volume", "dollar", "tick"):
-            source_tf = config.bars.source_timeframe
-            if source_tf and source_tf != "1m":
+            if config.bars.source_timeframe != "1m":
                 raise ValueError(
-                    f"Event bars (mode={config.bars.mode}) should be built from 1m data. "
-                    f"Got source_timeframe={source_tf}. "
-                    f"Non-time event bars require high-resolution (1m) data to accurately "
-                    f"capture volume, dollar, or tick thresholds."
-                )
-            elif source_tf is None:
-                logger.warning(
-                    "Event bars mode=%s enabled but source_timeframe not specified in config. "
-                    "Event bars ideally should be built from 1m data. "
-                    "Set bars.source_timeframe='1m' in your config to suppress this warning.",
-                    config.bars.mode
+                    f"Event bars currently only supported from 1m data; "
+                    f"got source_timeframe={config.bars.source_timeframe!r}. "
+                    f"Set timeframe='1m' in your config when using event bars."
                 )
 
         df = build_event_bars(df, config.bars)
 
     return df
+
+
+def load_ohlcv_for_symbol_tf(
+    symbol: str,
+    timeframe: str,
+    data_cfg: DataConfig,
+) -> pd.DataFrame:
+    """
+    Load OHLCV data for a specific symbol and timeframe using DataConfig.
+
+    This helper automatically:
+    - Resolves the file path using ohlcv_path_template
+    - Applies the appropriate lookback_days filter based on timeframe
+    - Applies event bar configuration if specified
+
+    Args:
+        symbol: Trading symbol (e.g., "BTCUSDT")
+        timeframe: Timeframe string (e.g., "15m", "1h")
+        data_cfg: DataConfig containing paths and lookback settings
+
+    Returns:
+        DataFrame with OHLCV data (filtered and processed)
+
+    Example:
+        >>> from finantradealgo.system.config_loader import load_system_config
+        >>> cfg = load_system_config()
+        >>> df = load_ohlcv_for_symbol_tf("BTCUSDT", "15m", cfg["data_cfg"])
+    """
+    # Resolve file path from template
+    path = data_cfg.ohlcv_path_template.format(symbol=symbol, timeframe=timeframe)
+
+    # Get lookback days for this timeframe
+    lookback = data_cfg.lookback_days.get(timeframe, data_cfg.default_lookback_days)
+
+    logger.info(
+        f"Loading {symbol} {timeframe} from {path} (lookback: {lookback} days)"
+    )
+
+    return load_ohlcv_csv(path, config=data_cfg, lookback_days=lookback)
 
 
 def _load_timeseries_csv(path: Path) -> pd.DataFrame:

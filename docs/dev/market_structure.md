@@ -52,3 +52,67 @@ This implementation is a robust foundation but has several areas for future impr
 -   **No FVG Fill Tracking**: The engine flags the creation of FVGs but does not track their state (e.g., if/when they are filled or partially filled). This logic would need to be handled by the strategy itself.
 -   **Simplified ChoCh**: The Change of Character (`ms_choch`) detection is currently tied to the `ms_trend_regime` flipping. A more traditional definition involves price breaking the last minor swing structure against the primary trend, which is a more nuanced calculation not yet implemented.
 -   **Static Zone Analysis**: Zones are built based on a fixed lookback window. The engine does not currently have a concept of a zone's "freshness" or whether it has been mitigated.
+
+## 6. Runtime Validation
+
+The market structure module includes an optional validator (`finantradealgo.validators.structure_validator`) that can catch logical inconsistencies in the computed signals. This is particularly useful during development and debugging.
+
+### Enabling Validation in Feature Pipeline
+
+To enable validation at runtime, set `validate_market_structure=True` in your `FeaturePipelineConfig`:
+
+```python
+from finantradealgo.features.feature_pipeline import (
+    FeaturePipelineConfig,
+    build_feature_pipeline
+)
+
+cfg = FeaturePipelineConfig(
+    use_market_structure=True,
+    market_structure_return_zones=True,
+    validate_market_structure=True,  # Enable runtime validation
+    # ... other settings
+)
+
+result = build_feature_pipeline("data/ohlcv/BTCUSDT_15m.csv", pipeline_cfg=cfg)
+```
+
+Or via `system.yml`:
+
+```yaml
+features:
+  use_market_structure: true
+  validate_market_structure: true  # For debug/paper trading
+```
+
+### Validation Rules
+
+The validator checks for:
+
+1. **Swing point overlap**: A bar cannot be both swing_high and swing_low
+2. **FVG overlap**: A bar cannot have both fvg_up and fvg_down
+3. **BoS trend consistency**: BoS up requires uptrend, BoS down requires downtrend
+4. **ChoCh trend change**: ChoCh should correspond to trend_regime change
+5. **Value ranges**: All binary flags should be 0/1, trend_regime should be -1/0/1
+6. **Sparsity warnings**: Warns if >20% of bars are swing points or >15% have FVGs
+
+### When to Use
+
+- **Debug/Development**: Always enable during development to catch regressions
+- **Paper Trading**: Enable to verify market structure is behaving as expected
+- **Production/Backtest**: Disable (default) to avoid validation overhead
+
+### Performance Impact
+
+- Validation adds ~10-20ms overhead for typical DataFrames (1000-5000 bars)
+- The validator is imported lazily only when `validate_market_structure=True`
+- Violations are raised as `ValueError` with detailed error messages
+
+Example error output:
+
+```
+ValueError: Market structure validation failed with 3 violation(s):
+[ERROR] swing_overlap at 2024-01-15 10:30:00: Bar marked as both swing_high and swing_low
+[ERROR] bos_up_trend at 2024-01-15 14:00:00: BOS up detected but trend_regime is 0 (expected 1)
+[WARNING] swing_density at None: Too many swing highs: 245/1000 (24.5%)
+```

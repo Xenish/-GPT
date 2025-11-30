@@ -18,6 +18,7 @@ export default function HomePage() {
     availableSymbols,
     availableTimeframes,
     availableStrategies,
+    mlTargets,
     selectedStrategy,
     backtests,
     selectedRunId,
@@ -78,6 +79,11 @@ export default function HomePage() {
   } = useChartStore();
 
   const [activeTab, setActiveTab] = useState<"single" | "portfolio" | "live" | "lab" | "ml">("single");
+
+  // ML Lab: separate symbol/timeframe selection filtered by ml_targets
+  const [mlSymbol, setMlSymbol] = useState<string>("");
+  const [mlTimeframe, setMlTimeframe] = useState<string>("");
+
   const filteredRuns = useMemo(
     () => backtests.filter((run) => run.strategy === selectedStrategy),
     [backtests, selectedStrategy]
@@ -200,11 +206,19 @@ export default function HomePage() {
     return () => clearInterval(id);
   }, [activeTab, fetchLiveStatus]);
 
+  // Initialize ML Lab selection when mlTargets are loaded
   useEffect(() => {
-    if (activeTab === "ml" && !isLoadingMlModels && mlModels.length === 0) {
-      fetchMlModels();
+    if (mlTargets.length > 0 && !mlSymbol) {
+      setMlSymbol(mlTargets[0].symbol);
+      setMlTimeframe(mlTargets[0].timeframe);
     }
-  }, [activeTab, fetchMlModels, isLoadingMlModels, mlModels.length]);
+  }, [mlTargets, mlSymbol]);
+
+  useEffect(() => {
+    if (activeTab === "ml" && !isLoadingMlModels && mlModels.length === 0 && mlSymbol && mlTimeframe) {
+      fetchMlModels(mlSymbol, mlTimeframe);
+    }
+  }, [activeTab, fetchMlModels, isLoadingMlModels, mlModels.length, mlSymbol, mlTimeframe]);
 
   return (
     <main className="min-h-screen px-6 py-4 flex flex-col gap-4 bg-slate-50">
@@ -647,21 +661,48 @@ export default function HomePage() {
       )}
 
       {activeTab === "ml" && (
-        <section className="grid grid-cols-1 md:grid-cols-[1.2fr,1.8fr] gap-4">
+        <section className="space-y-3">
+          <div className="flex flex-wrap items-center gap-4 text-sm">
+            <label className="flex items-center gap-2">
+              <span>Symbol/TF</span>
+              <select
+                value={`${mlSymbol}|${mlTimeframe}`}
+                onChange={(e) => {
+                  const [sym, tf] = e.target.value.split("|");
+                  setMlSymbol(sym);
+                  setMlTimeframe(tf);
+                  fetchMlModels(sym, tf);
+                }}
+                className="border px-2 py-1 rounded"
+              >
+                {mlTargets.length > 0 ? (
+                  mlTargets.map((target) => (
+                    <option key={`${target.symbol}-${target.timeframe}`} value={`${target.symbol}|${target.timeframe}`}>
+                      {target.symbol}/{target.timeframe}
+                    </option>
+                  ))
+                ) : (
+                  <option value="">No ML targets configured</option>
+                )}
+              </select>
+            </label>
+            <button
+              onClick={() => mlSymbol && mlTimeframe && fetchMlModels(mlSymbol, mlTimeframe)}
+              disabled={isLoadingMlModels || !mlSymbol || !mlTimeframe}
+              className="px-3 py-1 border rounded text-xs"
+            >
+              {isLoadingMlModels ? "Loading..." : "Refresh"}
+            </button>
+            {mlError && <span className="text-xs text-red-600">{mlError}</span>}
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-[1.2fr,1.8fr] gap-4">
           <div className="border rounded bg-white shadow p-3 space-y-2 text-xs">
             <div className="flex items-center justify-between gap-2">
               <div className="font-semibold text-sm">
-                Models ({symbol}/{timeframe})
+                Models ({mlSymbol}/{mlTimeframe})
               </div>
-              <button
-                onClick={() => fetchMlModels()}
-                disabled={isLoadingMlModels}
-                className="px-2 py-1 border rounded text-xs"
-              >
-                {isLoadingMlModels ? "Loading..." : "Refresh"}
-              </button>
             </div>
-            {mlError && <div className="text-xs text-red-600">{mlError}</div>}
             <div className="max-h-72 overflow-auto border rounded">
               {mlModels.length === 0 && !isLoadingMlModels ? (
                 <div className="p-2 text-slate-500">No models found.</div>
@@ -770,6 +811,7 @@ export default function HomePage() {
             ) : (
               <div className="text-slate-500 text-[11px]">Select a model from the list.</div>
             )}
+          </div>
           </div>
         </section>
       )}

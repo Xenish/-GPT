@@ -13,9 +13,10 @@ from pydantic import BaseModel
 from copy import deepcopy
 
 from finantradealgo.features.feature_pipeline import PIPELINE_VERSION
-from finantradealgo.system.config_loader import load_system_config, PortfolioConfig
+from finantradealgo.system.config_loader import load_system_config, PortfolioConfig, DataConfig
 from finantradealgo.backtester.scenario_engine import run_scenario_preset
 from finantradealgo.ml.model_registry import load_registry, validate_registry_entry
+from finantradealgo.ml.ml_utils import get_ml_targets
 from finantradealgo.backtester.portfolio_engine import PortfolioBacktestEngine
 from finantradealgo.backtester.runners import run_backtest_once
 
@@ -127,11 +128,19 @@ class RunBacktestResponse(BaseModel):
     trade_count: int
 
 
+class MLTarget(BaseModel):
+    symbol: str
+    timeframe: str
+
+
 class MetaResponse(BaseModel):
     symbols: List[str]
     timeframes: List[str]
     strategies: List[str]
     scenario_presets: List[str] = []
+    lookback_days: Optional[Dict[str, int]] = None
+    default_lookback_days: Optional[int] = None
+    ml_targets: Optional[List[MLTarget]] = None
 
 
 class ScenarioRunRequest(BaseModel):
@@ -576,16 +585,47 @@ def create_app() -> FastAPI:
 
     @app.get("/api/meta", response_model=MetaResponse)
     def get_meta():
+        """
+        Get system metadata including symbols, timeframes, and lookback configuration.
+
+        Returns multi-timeframe configuration with per-timeframe lookback days
+        for data filtering and resource management.
+        """
         cfg = load_system_config()
-        symbols = cfg.get("symbols") or [cfg.get("symbol", "AIAUSDT")]
-        timeframes = cfg.get("timeframes") or [cfg.get("timeframe", "15m")]
+
+        # Get data configuration with multi-TF support
+        data_cfg = cfg.get("data_cfg")
+        if data_cfg:
+            symbols = data_cfg.symbols
+            timeframes = data_cfg.timeframes
+            lookback_days = data_cfg.lookback_days if data_cfg.lookback_days else None
+            default_lookback_days = data_cfg.default_lookback_days
+        else:
+            # Fallback to legacy config structure
+            data_section = cfg.get("data", {}) or {}
+            symbols = data_section.get("symbols") or [cfg.get("symbol", "AIAUSDT")]
+            timeframes = data_section.get("timeframes") or [cfg.get("timeframe", "15m")]
+            lookback_days = data_section.get("lookback_days")
+            default_lookback_days = data_section.get("default_lookback_days")
+
+        # Get available strategies
         strategies = cfg.get("strategy", {}).get("available") or ["rule", "ml"]
+
+        # Get scenario presets
         scenario_presets = list((cfg.get("scenario", {}) or {}).get("presets", {}).keys())
+
+        # Get ML targets (symbol/timeframe combinations for ML training)
+        ml_targets_list = get_ml_targets(cfg)
+        ml_targets = [MLTarget(symbol=sym, timeframe=tf) for sym, tf in ml_targets_list]
+
         return MetaResponse(
-            symbols=list(symbols),
-            timeframes=list(timeframes),
+            symbols=list(symbols) if symbols else [],
+            timeframes=list(timeframes) if timeframes else [],
             strategies=list(strategies),
             scenario_presets=scenario_presets,
+            lookback_days=lookback_days,
+            default_lookback_days=default_lookback_days,
+            ml_targets=ml_targets if ml_targets else None,
         )
 
     @app.post("/api/scenarios/run", response_model=ScenarioRunResponse)

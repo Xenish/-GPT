@@ -17,13 +17,18 @@ def load_trades(
 
     The CSV is expected to have columns: timestamp, side, price, size.
 
+    Contract:
+        - Returns a DataFrame with DatetimeIndex (timestamp column as index)
+        - Index is sorted in ascending order
+        - Columns: side, price, size (timestamp becomes the index)
+
     Args:
         symbol: The trading symbol (e.g., 'BTCUSDT').
         timeframe: The timeframe (e.g., '15m').
         trades_dir: The directory to load from. Defaults to 'data/trades'.
 
     Returns:
-        A DataFrame with trade data, or None if the file is not found.
+        A DataFrame with trade data (DatetimeIndex), or None if the file is not found.
     """
     base_dir = trades_dir or TRADES_DIR
     file_path = base_dir / f"{symbol}_{timeframe}_trades.csv"
@@ -34,6 +39,11 @@ def load_trades(
 
     try:
         df = pd.read_csv(file_path, parse_dates=["timestamp"])
+
+        # Standardize: set timestamp as DatetimeIndex
+        df["timestamp"] = pd.to_datetime(df["timestamp"], utc=True)
+        df = df.set_index("timestamp").sort_index()
+
         return df
     except Exception as e:
         print(f"Error loading trade data from {file_path}: {e}")

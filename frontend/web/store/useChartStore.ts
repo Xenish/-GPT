@@ -14,7 +14,7 @@ import {
   getMlModels,
   getFeatureImportance,
 } from "@/lib/api";
-import type { ScenarioResult, ModelInfo, FeatureImportanceItem } from "@/lib/api";
+import type { ScenarioResult, ModelInfo, FeatureImportanceItem, MLTarget } from "@/lib/api";
 
 export type BarPoint = {
   time: number;
@@ -129,6 +129,8 @@ type ChartState = {
   availableSymbols: string[];
   availableTimeframes: string[];
   availableStrategies: string[];
+  lookbackDaysByTf: Record<string, number> | null;
+  mlTargets: MLTarget[];
   ruleParams: {
     ms_trend_min?: number;
     ms_trend_max?: number;
@@ -217,6 +219,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   availableSymbols: [],
   availableTimeframes: [],
   availableStrategies: [],
+  lookbackDaysByTf: null,
+  mlTargets: [],
   ruleParams: {},
   scenarioResults: [],
   selectedScenarioId: null,
@@ -278,6 +282,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
         availableSymbols: data.symbols,
         availableTimeframes: data.timeframes,
         availableStrategies: data.strategies,
+        lookbackDaysByTf: data.lookback_days || null,
+        mlTargets: data.ml_targets || [],
         symbol,
         timeframe,
         strategies: data.strategies,

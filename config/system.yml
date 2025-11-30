@@ -32,8 +32,22 @@ data:
   symbols:
     - "AIAUSDT"
     - "BTCUSDT"
-  timeframe: "15m"
+    - "ETHUSDT"
+    - "BNBUSDT"
+    - "XRPUSDT"
+  timeframe: "15m"  # Legacy single timeframe (for backward compatibility)
+  timeframes:
+    - "1m"
+    - "5m"
+    - "15m"
+    - "1h"
   ohlcv_path_template: "data/ohlcv/{symbol}_{timeframe}.csv"
+  lookback_days:
+    "1m": 90
+    "5m": 90
+    "15m": 180
+    "1h": 365
+  default_lookback_days: 365
   flow_dir: "data/flow"
   sentiment_dir: "data/sentiment"
   bars:
@@ -101,6 +115,17 @@ risk:
   warmup_bars: 50
 
 ml:
+  enabled: true
+  targets:
+    # ML training is computationally expensive - limit to specific symbol/timeframe combos
+    # If empty, defaults to first symbol/timeframe from data.symbols/data.timeframes
+    - symbol: "BTCUSDT"
+      timeframe: "15m"
+    - symbol: "AIAUSDT"
+      timeframe: "15m"
+    # Uncomment to add more targets:
+    # - symbol: "BTCUSDT"
+    #   timeframe: "1h"
   label:
     method: "fixed_horizon"
     horizon_bars: 8

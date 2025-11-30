@@ -201,13 +201,6 @@ def test_pipeline_with_event_bars_and_all_features():
             assert all(v in [0.0, 1.0] for v in unique_values), \
                 f"{col} should only have values [0, 1], got {unique_values}"
 
-        print(f"[PASS] Integration test passed!")
-        print(f"   - Original bars: 200")
-        print(f"   - Event bars: {len(result.df)}")
-        print(f"   - Microstructure columns: {len(actual_microstructure_cols)}")
-        print(f"   - Market structure columns: {len(actual_market_structure_cols)}")
-        print(f"   - Market structure zones: {len(result.meta['market_structure_zones'])}")
-
     finally:
         import os
         os.unlink(csv_path)
@@ -274,10 +267,6 @@ def test_pipeline_event_bars_without_market_structure():
         assert len(unexpected_ms_cols) == 0, \
             f"Should not have market structure columns when disabled, found: {unexpected_ms_cols}"
 
-        print(f"[PASS] Microstructure-only test passed!")
-        print(f"   - Event bars: {len(result.df)}")
-        print(f"   - Microstructure columns: {len(actual_microstructure_cols)}")
-
     finally:
         import os
         os.unlink(csv_path)
@@ -337,10 +326,6 @@ def test_pipeline_event_bars_different_modes():
         assert isinstance(result_tick.df, pd.DataFrame), "Tick mode should work"
         assert 'bar_start_ts' in result_tick.df.columns, "Tick mode should have event bar metadata"
         assert len(result_tick.df) < 200, "Tick mode should reduce bar count"
-
-        print(f"[PASS] Different event bar modes test passed!")
-        print(f"   - Dollar mode bars: {len(result_dollar.df)}")
-        print(f"   - Tick mode bars: {len(result_tick.df)}")
 
     finally:
         import os

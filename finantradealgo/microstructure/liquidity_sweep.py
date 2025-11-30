@@ -37,13 +37,15 @@ def detect_liquidity_sweep(
     if trades_df is None or trades_df.empty:
         return sweep_up, sweep_down
 
+    # Contract: trades_df must have DatetimeIndex
+    if not isinstance(trades_df.index, pd.DatetimeIndex):
+        raise ValueError(
+            "trades_df must have a DatetimeIndex. "
+            "Use load_trades() or ensure trades_df.set_index('timestamp') was called."
+        )
+
     # 1. Filter trades to the relevant time window
     window_start = bar_start_ts - pd.to_timedelta(cfg.lookback_ms, unit="ms")
-    
-    # Ensure the trades DataFrame has a datetime index for efficient slicing
-    if not isinstance(trades_df.index, pd.DatetimeIndex):
-        trades_df = trades_df.set_index("timestamp")
-
     relevant_trades = trades_df.loc[window_start:bar_end_ts]
 
     if relevant_trades.empty:

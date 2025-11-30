@@ -9,6 +9,7 @@ import pandas as pd
 
 from finantradealgo.data_engine.loader import (
     load_ohlcv_csv,
+    load_ohlcv_for_symbol_tf,
     load_flow_features,
     load_sentiment_features,
 )
@@ -71,6 +72,7 @@ class FeaturePipelineConfig:
     use_microstructure: bool = False
     use_market_structure: bool = False
     market_structure_return_zones: bool = False  # If True, zones are added to meta
+    validate_market_structure: bool = False  # If True, validate market structure after computation
     use_external: bool = True
     use_rule_signals: bool = True
     use_flow_features: bool = False
@@ -94,7 +96,8 @@ class FeaturePipelineConfig:
 
 
 def build_feature_pipeline(
-    csv_ohlcv_path: str,
+    csv_ohlcv_path: Optional[str] = None,
+    df_ohlcv: Optional[pd.DataFrame] = None,
     pipeline_cfg: Optional[FeaturePipelineConfig] = None,
     csv_funding_path: Optional[str] = None,
     csv_oi_path: Optional[str] = None,
@@ -102,9 +105,35 @@ def build_feature_pipeline(
     sentiment_df: Optional[pd.DataFrame] = None,
     data_cfg: Optional[DataConfig] = None,
 ) -> FeaturePipelineResult:
+    """
+    Build feature pipeline from OHLCV data.
+
+    Args:
+        csv_ohlcv_path: Path to OHLCV CSV file (deprecated, use df_ohlcv)
+        df_ohlcv: Pre-loaded OHLCV DataFrame (preferred)
+        pipeline_cfg: Feature pipeline configuration
+        csv_funding_path: Path to funding rate CSV
+        csv_oi_path: Path to open interest CSV
+        flow_df: Pre-loaded flow features DataFrame
+        sentiment_df: Pre-loaded sentiment features DataFrame
+        data_cfg: Data configuration
+
+    Returns:
+        FeaturePipelineResult with features DataFrame and metadata
+
+    Note:
+        Either csv_ohlcv_path OR df_ohlcv must be provided.
+        df_ohlcv is preferred for multi-symbol/timeframe workflows.
+    """
     cfg = pipeline_cfg or FeaturePipelineConfig()
 
-    df = load_ohlcv_csv(csv_ohlcv_path, config=data_cfg)
+    # Load OHLCV data (support both old path-based and new DataFrame-based APIs)
+    if df_ohlcv is not None:
+        df = df_ohlcv
+    elif csv_ohlcv_path is not None:
+        df = load_ohlcv_csv(csv_ohlcv_path, config=data_cfg)
+    else:
+        raise ValueError("Either csv_ohlcv_path or df_ohlcv must be provided")
 
     if cfg.use_base:
         df = add_basic_features(df, cfg.feature_cfg)
@@ -131,8 +160,42 @@ def build_feature_pipeline(
             result = compute_market_structure_with_zones(df, cfg.market_structure)
             df = pd.concat([df, result.features], axis=1)
             meta["market_structure_zones"] = result.zones
+
+            # Validate market structure if requested
+            if cfg.validate_market_structure:
+                from finantradealgo.validators.structure_validator import validate_market_structure
+
+                violations = validate_market_structure(
+                    df=df,
+                    swings=None,  # swings not currently returned by engine
+                    zones=result.zones,
+                    cfg=cfg.market_structure
+                )
+                if violations:
+                    error_msgs = [str(v) for v in violations]
+                    raise ValueError(
+                        f"Market structure validation failed with {len(violations)} violation(s):\n" +
+                        "\n".join(error_msgs)
+                    )
         else:
             df = add_market_structure_features(df, cfg.market_structure)
+
+            # Validate market structure if requested (without zones)
+            if cfg.validate_market_structure:
+                from finantradealgo.validators.structure_validator import validate_market_structure
+
+                violations = validate_market_structure(
+                    df=df,
+                    swings=None,
+                    zones=None,
+                    cfg=cfg.market_structure
+                )
+                if violations:
+                    error_msgs = [str(v) for v in violations]
+                    raise ValueError(
+                        f"Market structure validation failed with {len(violations)} violation(s):\n" +
+                        "\n".join(error_msgs)
+                    )
 
     if cfg.use_external:
         funding_path = csv_funding_path if csv_funding_path else None
@@ -256,6 +319,7 @@ def build_feature_pipeline_from_system_config(
             use_htf=feature_section.get("use_htf", True),
             use_microstructure=feature_section.get("use_microstructure", False),
             use_market_structure=feature_section.get("use_market_structure", False),
+            validate_market_structure=feature_section.get("validate_market_structure", False),
             use_external=feature_section.get("use_external", True),
             use_rule_signals=feature_section.get("use_rule_signals", True),
             use_flow_features=feature_section.get("use_flow_features", False),
@@ -291,19 +355,23 @@ def build_feature_pipeline_from_system_config(
     if not resolved_timeframe:
         raise ValueError("Timeframe must be provided via args or system config.")
 
-    ohlcv_dir = Path(data_section.get("ohlcv_dir", "data/ohlcv"))
+    # Extract DataConfig from system config
+    data_cfg = DataConfig.from_dict(data_section)
+
+    # Load OHLCV data using new loader (with automatic lookback filtering)
+    logger.info(
+        f"Loading OHLCV data for {resolved_symbol} {resolved_timeframe} "
+        f"(lookback: {data_cfg.lookback_days.get(resolved_timeframe, data_cfg.default_lookback_days)} days)"
+    )
+    df_ohlcv = load_ohlcv_for_symbol_tf(resolved_symbol, resolved_timeframe, data_cfg)
+
+    # Construct paths for external data
     external_dir = Path(data_section.get("external_dir", "data/external"))
-    ohlcv_template = data_section.get("ohlcv_path_template")
-    if ohlcv_template:
-        csv_ohlcv = Path(ohlcv_template.format(symbol=resolved_symbol, timeframe=resolved_timeframe))
-    else:
-        csv_ohlcv = ohlcv_dir / f"{resolved_symbol}_{resolved_timeframe}.csv"
     csv_funding = external_dir / "funding" / f"{resolved_symbol}_{resolved_timeframe}_funding.csv"
     csv_oi = external_dir / "open_interest" / f"{resolved_symbol}_{resolved_timeframe}_oi.csv"
     flow_dir = data_section.get("flow_dir")
     sentiment_dir = data_section.get("sentiment_dir")
     base_data_dir = data_section.get("base_dir", "data")
-    data_cfg = DataConfig.from_dict(data_section) # Extract DataConfig from the loaded system config
 
     flow_df = None
     if fp_cfg.use_flow_features:
@@ -335,16 +403,20 @@ def build_feature_pipeline_from_system_config(
             )
             fp_cfg.use_sentiment_features = False
 
-    df, pipeline_meta = build_feature_pipeline(
-        csv_ohlcv_path=str(csv_ohlcv),
+    # Build features using pre-loaded DataFrame
+    result = build_feature_pipeline(
+        df_ohlcv=df_ohlcv,  # Use pre-loaded DataFrame (already has lookback applied)
         pipeline_cfg=fp_cfg,
         csv_funding_path=str(csv_funding) if csv_funding.exists() else None,
         csv_oi_path=str(csv_oi) if csv_oi.exists() else None,
         flow_df=flow_df,
         sentiment_df=sentiment_df,
-        data_cfg=data_cfg, # Pass data_cfg here
+        data_cfg=data_cfg,
     )
 
-    pipeline_meta["symbol"] = resolved_symbol
-    pipeline_meta["timeframe"] = resolved_timeframe
-    return df, pipeline_meta
+    # Add symbol/timeframe to metadata
+    result.meta["symbol"] = resolved_symbol
+    result.meta["timeframe"] = resolved_timeframe
+
+    # Return as tuple for backward compatibility
+    return result.df, result.meta

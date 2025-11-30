@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -19,8 +20,17 @@ def build_run_id(symbol: str, timeframe: str) -> str:
     return f"{symbol}_{timeframe}_{ts}"
 
 
-def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
-    cfg = load_system_config()
+def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, config_path: Optional[str] = None) -> None:
+    # Load config with profile support
+    cfg = load_system_config(path=config_path)
+
+    # SAFETY: Assert live/paper mode for live trading
+    cfg_mode = cfg.get("mode", "unknown")
+    if cfg_mode not in ("live", "paper"):
+        raise RuntimeError(
+            f"Live trading must run with mode='live' or mode='paper' config. Got mode='{cfg_mode}'. "
+            f"Use --config config/system.live.yml or set FT_CONFIG_PATH=config/system.live.yml"
+        )
     cfg_local = dict(cfg)
     live_section = dict(cfg_local.get("live", {}) or {})
     if symbol:
@@ -71,4 +81,15 @@ def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run live paper trading")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config file (default: from FT_CONFIG_PATH env or config/system.yml)"
+    )
+    parser.add_argument("--symbol", type=str, default=None, help="Override symbol")
+    parser.add_argument("--timeframe", type=str, default=None, help="Override timeframe")
+    args = parser.parse_args()
+
+    main(symbol=args.symbol, timeframe=args.timeframe, config_path=args.config)

@@ -1,0 +1,154 @@
+# ============================================================================
+# Live Configuration Profile
+# ============================================================================
+# Bu profil live/paper trading için kullanılır.
+# system.base.yml'deki ayarları inherit eder ve override eder.
+#
+# Kullanım:
+#   FT_CONFIG_PATH=config/system.live.yml python -m finantradealgo.scripts.run_live_trader
+#   FT_CONFIG_PATH=config/system.live.yml python -m finantradealgo.api.server
+
+# ============================================================================
+# MODE - KRITIK: Bu profil sadece live/paper için
+# ============================================================================
+mode: "paper"  # "paper" | "live" (production'da "live" olacak)
+
+# ============================================================================
+# EXCHANGE - Live/Paper Exchange
+# ============================================================================
+exchange:
+  name: "binance_futures"
+  type: "live"  # NOT backtest!
+  testnet: true  # Paper trading için testnet kullan
+  dry_run: false  # Paper modda bile dry_run false (gerçek order flow simüle edilir)
+
+  # Live endpoints
+  base_url_rest: "https://fapi.binance.com"
+  base_url_rest_testnet: "https://testnet.binancefuture.com"
+  base_url_ws: "wss://fstream.binance.com"
+  base_url_ws_testnet: "wss://stream.binancefuture.com"
+
+  # GERÇEK API KEYS (env'den alınır)
+  api_key_env: "BINANCE_FUTURES_API_KEY"
+  secret_key_env: "BINANCE_FUTURES_API_SECRET"
+  api_key: "${BINANCE_FUTURES_API_KEY}"
+  secret_key: "${BINANCE_FUTURES_API_SECRET}"
+
+  recv_window_ms: 5000
+  time_sync: true  # Live'da ZORUNLU
+  max_time_skew_ms: 1000
+
+  symbol_mapping:
+    AIAUSDT: "AIAUSDT"
+    BTCUSDT: "BTCUSDT"
+
+  # Live trading limitler (güvenlik için sıkı)
+  default_leverage: 5
+  position_mode: "one_way"
+  max_leverage: 3
+  max_position_notional: 200.0  # Maksimum pozisyon büyüklüğü ($)
+  max_position_contracts: 0.05  # Maksimum pozisyon büyüklüğü (kontrat)
+
+# ============================================================================
+# LIVE - Live Trading Ayarları
+# ============================================================================
+live:
+  # Live trading enforces single symbol/timeframe
+  # Principle: "research universe is wide, live universe is narrow"
+  mode: "paper"  # "paper" | "exchange" (production'da "exchange" olacak)
+
+  # NARROW UNIVERSE: Live trading sadece TEK sembol/timeframe
+  symbols:
+    - "AIAUSDT"
+  symbol: "AIAUSDT"  # Single symbol for live trading
+  timeframe: "15m"    # Single timeframe for live trading
+
+  data_source: "replay"  # "replay" | "binance_ws"
+  exchange: "binance_futures"
+  ws_enabled: false      # Paper'da websocket kapalı, replay kullan
+  rest_poll_sec: 5
+
+  # Position ve risk limitleri
+  max_concurrent_positions: 1
+  max_position_notional: 100.0  # $100 max pozisyon
+  max_daily_loss: 20.0          # $20 max günlük zarar
+  max_open_trades: 3
+
+  # Order ayarları
+  order_retry_limit: 3
+  order_timeout_seconds: 5
+
+  # Logging
+  log_dir: "outputs/live_logs"
+  log_level: "INFO"
+  heartbeat_path: "outputs/live/heartbeat_{run_id}.json"
+
+  # Replay mode (paper trading için)
+  replay:
+    bars_limit: 500
+    start_index: 0
+    start_timestamp: null
+
+  # Paper trading ayarları
+  paper:
+    initial_cash: 10000
+    save_state_every_n_bars: 25
+    state_path: "outputs/live_state/paper_state.json"
+    output_dir: "outputs/live_paper"
+
+  # Execution ayarları
+  execution:
+    allow_market_orders: true
+    allow_limit_orders: true
+
+  # WebSocket ayarları (live modda kullanılır)
+  ws:
+    use_1m_stream: true
+    aggregate_to_tf: "15m"
+    resync_lookback_bars: 200
+    max_stale_seconds: 30
+    max_ws_reconnects: 10
+
+# ============================================================================
+# KILL SWITCH - Acil Durum Koruma
+# ============================================================================
+kill_switch:
+  enabled: true
+  daily_realized_pnl_limit: -20.0     # $20 günlük zarar -> DURDUR
+  max_equity_drawdown_pct: 30.0       # %30 drawdown -> DURDUR
+  max_exceptions_per_hour: 5          # Saatte 5 exception -> DURDUR
+  min_equity: 100.0                   # $100 altına düşme -> DURDUR
+  evaluation_interval_bars: 1
+
+# ============================================================================
+# NOTIFICATIONS - Bildirimler
+# ============================================================================
+notifications:
+  enabled: false  # Test/paper modda kapalı (production'da true olacak)
+  fcm:
+    enabled: false
+    server_key: ""  # Production'da "${FCM_SERVER_KEY}" olacak
+    topic: "finantrade"
+    min_level: "info"  # "info" | "warning" | "error"
+
+# ============================================================================
+# LOGGING - Live Logging
+# ============================================================================
+logging:
+  level: "INFO"
+  format: "structured"  # structured JSON logging for live
+  output_dir: "outputs/live_logs"
+  save_results: true
+
+# ============================================================================
+# Live'da KULLANILMAYAN bloklar (opsiyonel, minimal tutulabilir)
+# ============================================================================
+
+# Backtest bloku live'da kullanılmaz
+backtest:
+  warmup_bars: 0
+  slippage_pct: 0.0
+  commission_pct: 0.0
+  use_realistic_fills: false
+  log_trades: false
+  log_dir: null

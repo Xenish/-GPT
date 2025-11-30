@@ -1,66 +1,65 @@
+# ============================================================================
+# Base Configuration - Ortak Ayarlar
+# ============================================================================
+# Bu dosya research ve live profilleri için ortak ayarları içerir.
+# Semboller, feature'lar, risk parametreleri, strateji tanımları burada.
+
+# Mode will be overridden by profile configs (research/live)
+mode: "base"
+
+# Default symbol and timeframe (can be overridden)
 symbol: "AIAUSDT"
 timeframe: "15m"
 
-exchange:
-  name: "binance_futures"
-  testnet: true
-  dry_run: true
-  base_url_rest: "https://fapi.binance.com"
-  base_url_rest_testnet: "https://testnet.binancefuture.com"
-  base_url_ws: "wss://fstream.binance.com"
-  base_url_ws_testnet: "wss://stream.binancefuture.com"
-  api_key_env: "BINANCE_FUTURES_API_KEY"
-  secret_key_env: "BINANCE_FUTURES_API_SECRET"
-  api_key: "${BINANCE_FUTURES_API_KEY}"
-  secret_key: "${BINANCE_FUTURES_API_SECRET}"
-  recv_window_ms: 5000
-  time_sync: true
-  max_time_skew_ms: 1000
-  symbol_mapping:
-    AIAUSDT: "AIAUSDT"
-    BTCUSDT: "BTCUSDT"
-  default_leverage: 5
-  position_mode: "one_way"
-  max_leverage: 3
-  max_position_notional: 200.0
-  max_position_contracts: 0.05
-
+# ============================================================================
+# DATA - Veri Kaynakları ve Semboller
+# ============================================================================
 data:
   ohlcv_dir: "data/ohlcv"
   external_dir: "data/external"
   features_dir: "data/features"
+  flow_dir: "data/flow"
+  sentiment_dir: "data/sentiment"
+
+  # Research universe - geniş sembol ve timeframe seti
   symbols:
     - "AIAUSDT"
     - "BTCUSDT"
     - "ETHUSDT"
     - "BNBUSDT"
     - "XRPUSDT"
+
   timeframe: "15m"  # Legacy single timeframe (for backward compatibility)
   timeframes:
     - "1m"
     - "5m"
     - "15m"
     - "1h"
+
   ohlcv_path_template: "data/ohlcv/{symbol}_{timeframe}.csv"
+
   lookback_days:
     "1m": 90
     "5m": 90
     "15m": 180
     "1h": 365
   default_lookback_days: 365
-  flow_dir: "data/flow"
-  sentiment_dir: "data/sentiment"
+
   bars:
     mode: "time"   # time | volume | dollar | tick
     target_volume: 2000000
     target_notional: null
     target_ticks: null
+
   day_type:
     trend_body_to_range_min: 0.6
     range_body_to_range_max: 0.4
     liquidation_wick_to_range_min: 0.5
     liquidation_volume_z: 2.0
 
+# ============================================================================
+# FEATURES - Feature Engineering Ayarları
+# ============================================================================
 features:
   use_base: true
   use_ta: true
@@ -76,6 +75,27 @@ features:
   drop_na: true
   feature_preset: "extended"
 
+# ============================================================================
+# RISK - Risk Yönetimi Parametreleri
+# ============================================================================
+risk:
+  capital_risk_pct_per_trade: 0.01
+  max_leverage: 5.0
+  max_notional_per_symbol: 2000.0
+  max_daily_loss_pct: 0.03
+  daily_loss_lookback_days: 1
+  min_hold_bars: 2
+  use_tail_risk_guard: true
+  tail_risk_hv_threshold: 0.25
+  tail_risk_max_leverage_in_crash: 1.0
+  atr_period: 14
+  atr_mult_tp: 1.5
+  atr_mult_sl: 1.0
+  warmup_bars: 50
+
+# ============================================================================
+# RULE STRATEGY - Rule-based Strategy Parametreleri
+# ============================================================================
 rule:
   allowed_hours: [8, 9, 10, 11, 12, 13, 14, 15, 16, 17]
   allowed_weekdays: [0, 1, 2, 3, 4]
@@ -99,21 +119,9 @@ rule:
   allow_chop: false
   use_fvg_filter: false
 
-risk:
-  capital_risk_pct_per_trade: 0.01
-  max_leverage: 5.0
-  max_notional_per_symbol: 2000.0
-  max_daily_loss_pct: 0.03
-  daily_loss_lookback_days: 1
-  min_hold_bars: 2
-  use_tail_risk_guard: true
-  tail_risk_hv_threshold: 0.25
-  tail_risk_max_leverage_in_crash: 1.0
-  atr_period: 14
-  atr_mult_tp: 1.5
-  atr_mult_sl: 1.0
-  warmup_bars: 50
-
+# ============================================================================
+# ML - Machine Learning Ayarları
+# ============================================================================
 ml:
   enabled: true
   targets:
@@ -155,6 +163,9 @@ ml:
     use_latest: true
     selected_id: null
 
+# ============================================================================
+# STRATEGY - Strateji Tanımları
+# ============================================================================
 strategy:
   default: "rule"
   rule: {}
@@ -163,64 +174,9 @@ strategy:
   sweep_reversal: {}
   volatility_breakout: {}
 
-live:
-  # Live trading enforces single symbol/timeframe
-  # Principle: "research universe is wide, live universe is narrow"
-  # Even though data.symbols/data.timeframes may have many combinations,
-  # live trading uses only ONE specific combination for safety and focus
-  mode: "paper"               # "paper" | "exchange"
-  symbols:
-    - "AIAUSDT"
-  data_source: "replay"       # "replay" | "binance_ws"
-  exchange: "binance_futures"
-  symbol: "AIAUSDT"           # Single symbol for live trading
-  timeframe: "15m"            # Single timeframe for live trading
-  ws_enabled: false
-  rest_poll_sec: 5
-  max_concurrent_positions: 1
-  max_position_notional: 100.0
-  max_daily_loss: 20.0
-  max_open_trades: 3
-  order_retry_limit: 3
-  order_timeout_seconds: 5
-  log_dir: "outputs/live_logs"
-  log_level: "INFO"
-  heartbeat_path: "outputs/live/heartbeat_{run_id}.json"
-  replay:
-    bars_limit: 500
-    start_index: 0
-    start_timestamp:
-  paper:
-    initial_cash: 10000
-    save_state_every_n_bars: 25
-    state_path: "outputs/live_state/paper_state.json"
-    output_dir: "outputs/live_paper"
-  execution:
-    allow_market_orders: true
-    allow_limit_orders: true
-  ws:
-    use_1m_stream: true
-    aggregate_to_tf: "15m"
-    resync_lookback_bars: 200
-    max_stale_seconds: 30
-    max_ws_reconnects: 10
-
-kill_switch:
-  enabled: true
-  daily_realized_pnl_limit: -20.0
-  max_equity_drawdown_pct: 30.0
-  max_exceptions_per_hour: 5
-  min_equity: 100.0
-  evaluation_interval_bars: 1
-
-notifications:
-  enabled: true
-  fcm:
-    enabled: true
-    server_key: "${FCM_SERVER_KEY}"
-    topic: "finantrade"
-    min_level: "info"
-
+# ============================================================================
+# SCENARIO - Scenario Presets
+# ============================================================================
 scenario:
   presets:
     core_15m:
@@ -241,6 +197,9 @@ scenario:
         risk_params:
           capital_risk_pct_per_trade: 0.02
 
+# ============================================================================
+# PORTFOLIO - Portfolio Ayarları
+# ============================================================================
 portfolio:
   symbols:
     - AIAUSDT

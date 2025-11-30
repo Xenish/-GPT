@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import argparse
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -18,8 +19,17 @@ def build_run_id(symbol: str, timeframe: str, prefix: str = "live_exchange") -> 
     return f"{prefix}_{symbol}_{timeframe}_{ts}"
 
 
-def main() -> None:
-    cfg = load_system_config()
+def main(config_path: str | None = None) -> None:
+    # Load config with profile support
+    cfg = load_system_config(path=config_path)
+
+    # SAFETY: Assert live/paper mode for live trading
+    cfg_mode = cfg.get("mode", "unknown")
+    if cfg_mode not in ("live", "paper"):
+        raise RuntimeError(
+            f"Live trading must run with mode='live' or mode='paper' config. Got mode='{cfg_mode}'. "
+            f"Use --config config/system.live.yml or set FT_CONFIG_PATH=config/system.live.yml"
+        )
     live_cfg = cfg.get("live_cfg")
     if not isinstance(live_cfg, LiveConfig):
         live_cfg = LiveConfig.from_dict(
@@ -39,7 +49,7 @@ def main() -> None:
     dry_run_flag = getattr(cfg.get("exchange_cfg"), "dry_run", True)
     print(f"Starting live exchange run: {run_id} | strategy={strategy_name} | testnet={testnet_flag} | dry_run={dry_run_flag}")
     if dry_run_flag:
-        print("[INFO] exchange.dry_run=true › orders should be treated as simulation/testnet. Verify before deploying real capital.")
+        print("[INFO] exchange.dry_run=true ï¿½ orders should be treated as simulation/testnet. Verify before deploying real capital.")
 
     try:
         engine.run()
@@ -53,4 +63,13 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    parser = argparse.ArgumentParser(description="Run live exchange trading")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config file (default: from FT_CONFIG_PATH env or config/system.yml)"
+    )
+    args = parser.parse_args()
+
+    main(config_path=args.config)

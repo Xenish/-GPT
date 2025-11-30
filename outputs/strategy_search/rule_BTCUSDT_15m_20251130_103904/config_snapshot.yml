@@ -1,0 +1,128 @@
+# ============================================================================
+# Research Configuration Profile
+# ============================================================================
+# Bu profil backtest ve strategy research için kullanılır.
+# system.base.yml'deki ayarları inherit eder ve override eder.
+#
+# Kullanım:
+#   python -m finantradealgo.scripts.run_backtest --config config/system.research.yml
+#   FT_CONFIG_PATH=config/system.research.yml python -m finantradealgo.api.server
+
+# ============================================================================
+# MODE - KRITIK: Bu profil sadece research için
+# ============================================================================
+mode: "research"
+
+# ============================================================================
+# EXCHANGE - Mock/Backtest Exchange
+# ============================================================================
+exchange:
+  name: "binance_futures"
+  type: "backtest"  # backtest | mock (NOT live!)
+  testnet: true
+  dry_run: true
+
+  # Backtest için gerçek API key GEREKMEZ
+  # Mock endpoints kullanılır
+  base_url_rest: "https://testnet.binancefuture.com"
+  base_url_ws: "wss://stream.binancefuture.com"
+
+  # API keys: research'te mock olabilir veya hiç kullanılmaz
+  api_key_env: "BINANCE_FUTURES_API_KEY"
+  secret_key_env: "BINANCE_FUTURES_API_SECRET"
+  api_key: ""
+  secret_key: ""
+
+  recv_window_ms: 5000
+  time_sync: false  # Backtest'te time sync gerekmez
+  max_time_skew_ms: 1000
+
+  symbol_mapping:
+    AIAUSDT: "AIAUSDT"
+    BTCUSDT: "BTCUSDT"
+
+  # Backtest'te leverage/position limitler sembolik
+  default_leverage: 5
+  position_mode: "one_way"
+  max_leverage: 3
+  max_position_notional: 200.0
+  max_position_contracts: 0.05
+
+# ============================================================================
+# BACKTEST - Backtest Motor Ayarları
+# ============================================================================
+backtest:
+  warmup_bars: 200
+  slippage_pct: 0.001
+  commission_pct: 0.0004
+  use_realistic_fills: true
+  log_trades: true
+  log_dir: "outputs/backtest_logs"
+
+# ============================================================================
+# LOGGING - Research Logging
+# ============================================================================
+logging:
+  level: "INFO"
+  format: "detailed"
+  output_dir: "outputs/research_logs"
+  save_results: true
+
+# ============================================================================
+# Research'te KULLANILMAYAN bloklar (opsiyonel, minimal tutulabilir)
+# ============================================================================
+
+# Live trading blokları research'te kullanılmaz ama minimal tanım olabilir
+live:
+  mode: "disabled"  # Research'te live trading YOK
+  symbols: []
+  data_source: "replay"
+  exchange: "binance_futures"
+  symbol: "AIAUSDT"
+  timeframe: "15m"
+  ws_enabled: false
+  rest_poll_sec: 5
+  max_concurrent_positions: 0
+  max_position_notional: 0.0
+  max_daily_loss: 0.0
+  max_open_trades: 0
+  order_retry_limit: 3
+  order_timeout_seconds: 5
+  log_dir: "outputs/live_logs"
+  log_level: "INFO"
+  heartbeat_path: null
+  replay:
+    bars_limit: 500
+    start_index: 0
+    start_timestamp: null
+  paper:
+    initial_cash: 10000
+    save_state_every_n_bars: 25
+    state_path: null
+    output_dir: null
+  execution:
+    allow_market_orders: false
+    allow_limit_orders: false
+  ws:
+    use_1m_stream: false
+    aggregate_to_tf: "15m"
+    resync_lookback_bars: 0
+    max_stale_seconds: 30
+    max_ws_reconnects: 0
+
+# Kill switch ve notifications research'te gerekmez
+kill_switch:
+  enabled: false
+  daily_realized_pnl_limit: 0.0
+  max_equity_drawdown_pct: 100.0
+  max_exceptions_per_hour: 999
+  min_equity: 0.0
+  evaluation_interval_bars: 1
+
+notifications:
+  enabled: false
+  fcm:
+    enabled: false
+    server_key: ""
+    topic: ""
+    min_level: "error"

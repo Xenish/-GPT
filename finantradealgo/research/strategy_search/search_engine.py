@@ -217,7 +217,7 @@ def run_random_search(
     with meta_path.open("w", encoding="utf-8") as f:
         json.dump(meta_dict, f, indent=2)
 
-    print(f"✅ Strategy search job completed!")
+    print(f"Strategy search job completed!")
     print(f"   Job ID: {job.job_id}")
     print(f"   Strategy: {job.strategy}")
     print(f"   Samples: {job.n_samples}")

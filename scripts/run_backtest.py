@@ -1,4 +1,5 @@
 from __future__ import annotations
+import argparse
 import sys
 from pathlib import Path
 
@@ -18,7 +19,25 @@ from finantradealgo.system.config_loader import load_system_config
 
 
 def main() -> None:
-    sys_cfg = load_system_config()
+    parser = argparse.ArgumentParser(description="Run backtest with EMA Cross strategy")
+    parser.add_argument(
+        "--config",
+        type=str,
+        default=None,
+        help="Path to config file (default: from FT_CONFIG_PATH env or config/system.yml)"
+    )
+    args = parser.parse_args()
+
+    # Load config with profile support
+    sys_cfg = load_system_config(path=args.config)
+
+    # SAFETY: Assert research mode for backtest
+    cfg_mode = sys_cfg.get("mode", "unknown")
+    if cfg_mode != "research":
+        raise RuntimeError(
+            f"Backtest must run with mode='research' config. Got mode='{cfg_mode}'. "
+            f"Use --config config/system.research.yml or set FT_CONFIG_PATH=config/system.research.yml"
+        )
     data_cfg = sys_cfg.get("data", {})
     symbol = sys_cfg.get("symbol", "BTCUSDT")
     timeframe = sys_cfg.get("timeframe", "15m")

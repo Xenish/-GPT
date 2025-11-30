@@ -274,7 +274,18 @@ export const useChartStore = create<ChartState>((set, get) => ({
     const data = await getMeta();
     set((state) => {
       const symbol = data.symbols.includes(state.symbol) ? state.symbol : data.symbols[0];
-      const timeframe = data.timeframes.includes(state.timeframe) ? state.timeframe : data.timeframes[0];
+
+      // Prioritize "15m" (live trading timeframe) if available, otherwise use first
+      let timeframe = state.timeframe;
+      if (!data.timeframes.includes(timeframe)) {
+        // Current timeframe not in list - pick a default
+        if (data.timeframes.includes("15m")) {
+          timeframe = "15m"; // Prefer 15m for Strategy Lab and live consistency
+        } else {
+          timeframe = data.timeframes[0]; // Fallback to first available
+        }
+      }
+
       const strategy = data.strategies.includes(state.selectedStrategy)
         ? state.selectedStrategy
         : data.strategies[0];

@@ -643,19 +643,72 @@ def _propagate_source_timeframe(data_cfg: DataConfig, global_timeframe: str) -> 
     return data_cfg
 
 
-def load_system_config(path: str = "config/system.yml") -> Dict[str, Any]:
+def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
     """
-    Load the project-level system configuration and fill any missing fields
-    with sensible defaults so downstream modules can depend on them.
+    Load the project-level system configuration with profile support.
+
+    Profiles (system.research.yml / system.live.yml) automatically inherit from
+    system.base.yml if it exists.
+
+    Args:
+        path: Config file path. If None, reads from FT_CONFIG_PATH env var,
+              defaults to "config/system.yml"
+
+    Returns:
+        Merged config dictionary with all required fields
+
+    Raises:
+        FileNotFoundError: If config file doesn't exist
     """
+    # Determine config path from parameter or environment
+    if path is None:
+        path = os.getenv("FT_CONFIG_PATH", "config/system.yml")
+
     cfg_path = Path(path)
     if not cfg_path.exists():
         raise FileNotFoundError(f"System config not found at {cfg_path}")
 
+    # Check if this is a profile config (research/live)
+    is_profile = cfg_path.stem in ("system.research", "system.live")
+
+    # Load base config if this is a profile
+    base_cfg = {}
+    if is_profile:
+        base_path = cfg_path.parent / "system.base.yml"
+        if base_path.exists():
+            with base_path.open("r", encoding="utf-8") as f:
+                base_cfg = yaml.safe_load(f) or {}
+        else:
+            # Profile without base is allowed but warn
+            import warnings
+            warnings.warn(
+                f"Profile config {cfg_path.name} found but system.base.yml missing. "
+                f"Consider creating system.base.yml for shared settings."
+            )
+
+    # Load profile/main config
     with cfg_path.open("r", encoding="utf-8") as f:
         user_cfg = yaml.safe_load(f) or {}
 
-    merged = _deep_merge(DEFAULT_SYSTEM_CONFIG, user_cfg)
+    # Merge: DEFAULT -> base (if profile) -> user
+    if is_profile and base_cfg:
+        temp = _deep_merge(DEFAULT_SYSTEM_CONFIG, base_cfg)
+        merged = _deep_merge(temp, user_cfg)
+    else:
+        merged = _deep_merge(DEFAULT_SYSTEM_CONFIG, user_cfg)
+
+    # Ensure 'mode' field exists (critical for safety checks)
+    if "mode" not in merged:
+        merged["mode"] = "unknown"
+
+    # Add config metadata for debugging and validation
+    merged["_config_meta"] = {
+        "config_path": str(cfg_path),
+        "is_profile": is_profile,
+        "has_base": bool(base_cfg),
+        "mode": merged.get("mode", "unknown"),
+    }
+
     merged["portfolio_cfg"] = PortfolioConfig.from_dict(merged.get("portfolio", {}))
     merged["exchange_cfg"] = ExchangeConfig.from_dict(merged.get("exchange", {}))
     merged["exchange_risk_cfg"] = ExchangeRiskConfig.from_dict(merged.get("exchange", {}))

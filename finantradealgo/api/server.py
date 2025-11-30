@@ -555,6 +555,25 @@ def create_app() -> FastAPI:
         Frontend'teki 'Run backtest' butonu buraya POST atıyor.
         """
         cfg = load_system_config()
+
+        # Validate symbol and timeframe against configured values
+        data_cfg = cfg.get("data_cfg")
+        if data_cfg:
+            valid_symbols = data_cfg.symbols
+            valid_timeframes = data_cfg.timeframes
+
+            if valid_symbols and req.symbol not in valid_symbols:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown symbol '{req.symbol}'. Valid symbols: {', '.join(valid_symbols)}"
+                )
+
+            if valid_timeframes and req.timeframe not in valid_timeframes:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Unknown timeframe '{req.timeframe}'. Valid timeframes: {', '.join(valid_timeframes)}"
+                )
+
         try:
             result = run_backtest_once(
                 symbol=req.symbol,

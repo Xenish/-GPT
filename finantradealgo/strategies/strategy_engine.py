@@ -7,6 +7,8 @@ from finantradealgo.core.strategy import BaseStrategy
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
 from finantradealgo.strategies.param_space import ParamSpace
 from finantradealgo.strategies.rule_param_space import RULE_PARAM_SPACE
+from finantradealgo.strategies.sweep_param_space import SWEEP_PARAM_SPACE
+from finantradealgo.strategies.trend_param_space import TREND_PARAM_SPACE
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
 from finantradealgo.strategies.sweep_reversal import (
     SweepReversalConfig,
@@ -27,14 +29,33 @@ StrategyConfigType = Type[Any]
 
 @dataclass
 class StrategyMeta:
+    """Metadata for strategy registration and discovery.
+
+    Attributes:
+        name: Strategy name (identifier)
+        family: Strategy family (trend, range, microstructure, volatility, rule, ml)
+        uses_ml: Whether strategy uses ML features
+        uses_microstructure: Whether strategy uses microstructure features
+        uses_market_structure: Whether strategy uses market structure features
+        default_label_preset: Default ML label preset (if applicable)
+        default_feature_preset: Default feature preset
+        param_space: Parameter space for strategy_search (if searchable)
+        is_searchable: Whether strategy is searchable via strategy_search
+    """
     name: str
-    kind: str
+    family: str  # "trend" | "range" | "microstructure" | "volatility" | "rule" | "ml"
     uses_ml: bool
     uses_microstructure: bool
     uses_market_structure: bool
     default_label_preset: Optional[str] = None
     default_feature_preset: Optional[str] = None
     param_space: Optional[ParamSpace] = None
+    is_searchable: bool = False  # True if param_space is defined
+
+    def __post_init__(self):
+        """Auto-set is_searchable based on param_space."""
+        if self.param_space is not None and not self.is_searchable:
+            self.is_searchable = True
 
 
 @dataclass
@@ -81,7 +102,7 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_extract_rule_cfg,
         meta=StrategyMeta(
             name="rule_signals",
-            kind="rule",
+            family="rule",  # Rule-based strategy
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=True,
@@ -97,7 +118,7 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_extract_ml_cfg,
         meta=StrategyMeta(
             name="ml_signals",
-            kind="ml",
+            family="ml",  # Machine learning strategy
             uses_ml=True,
             uses_microstructure=True,
             uses_market_structure=True,
@@ -112,12 +133,13 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_default_extractor("trend_continuation"),
         meta=StrategyMeta(
             name="trend_continuation",
-            kind="price_action",
+            family="trend",  # Trend-following strategy
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=True,
             default_label_preset=None,
             default_feature_preset="extended",
+            param_space=TREND_PARAM_SPACE,  # Searchable
         ),
     ),
     "sweep_reversal": StrategySpec(
@@ -127,12 +149,13 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_default_extractor("sweep_reversal"),
         meta=StrategyMeta(
             name="sweep_reversal",
-            kind="price_action",
+            family="microstructure",  # Microstructure-based strategy
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=True,
             default_label_preset=None,
             default_feature_preset="extended",
+            param_space=SWEEP_PARAM_SPACE,  # Searchable
         ),
     ),
     "volatility_breakout": StrategySpec(
@@ -142,7 +165,7 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_default_extractor("volatility_breakout"),
         meta=StrategyMeta(
             name="volatility_breakout",
-            kind="volatility",
+            family="volatility",  # Volatility-based strategy
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=False,
@@ -190,10 +213,51 @@ def get_strategy_meta(strategy_name: str) -> StrategyMeta:
         raise ValueError(f"Unknown strategy '{strategy_name}'")
 
 
+def get_strategies_by_family(family: str) -> Dict[str, StrategyMeta]:
+    """Get all strategies belonging to a specific family.
+
+    Args:
+        family: Strategy family ("trend", "range", "microstructure", "volatility", "rule", "ml")
+
+    Returns:
+        Dictionary mapping strategy name to StrategyMeta for all strategies in the family
+
+    Example:
+        >>> trend_strategies = get_strategies_by_family("trend")
+        >>> print(list(trend_strategies.keys()))
+        ['trend_continuation']
+    """
+    return {
+        name: meta
+        for name, meta in STRATEGY_REGISTRY.items()
+        if meta.family == family
+    }
+
+
+def get_searchable_strategies() -> Dict[str, StrategyMeta]:
+    """Get all strategies that are searchable (have param_space defined).
+
+    Returns:
+        Dictionary mapping strategy name to StrategyMeta for searchable strategies
+
+    Example:
+        >>> searchable = get_searchable_strategies()
+        >>> print(list(searchable.keys()))
+        ['rule']  # Only strategies with param_space
+    """
+    return {
+        name: meta
+        for name, meta in STRATEGY_REGISTRY.items()
+        if meta.is_searchable
+    }
+
+
 __all__ = [
     "StrategyMeta",
     "create_strategy",
     "get_strategy_meta",
+    "get_strategies_by_family",
+    "get_searchable_strategies",
     "STRATEGY_REGISTRY",
     "STRATEGY_SPECS",
 ]

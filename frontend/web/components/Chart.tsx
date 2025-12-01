@@ -236,8 +236,8 @@ export default function Chart({
       : entrySecs + 3600;
     const buffer = 3 * 15 * 60; // 3 bars buffer
     chartRef.current.timeScale().setVisibleRange({
-      from: entrySecs - buffer,
-      to: exitSecs + buffer,
+      from: (entrySecs - buffer) as Time,
+      to: (exitSecs + buffer) as Time,
     });
   }, [selectedTradeId, trades]);
 

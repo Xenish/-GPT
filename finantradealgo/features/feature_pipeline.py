@@ -36,6 +36,7 @@ from finantradealgo.features.ta_features import TAFeatureConfig, add_ta_features
 from finantradealgo.features.flow_features import add_flow_features
 from finantradealgo.features.sentiment_features import add_sentiment_features
 from finantradealgo.system.config_loader import load_system_config, DataConfig
+from finantradealgo.validation import DataValidationConfig, validate_ohlcv
 
 PIPELINE_VERSION = "v1.0.0"
 logger = logging.getLogger(__name__)
@@ -81,6 +82,10 @@ class FeaturePipelineConfig:
     feature_preset: str = "extended"
     bar_mode: str = "time" # For UI/info purposes, not directly used in pipeline logic
 
+    # Task S3.2: Data validation integration
+    validate_ohlcv: bool = False  # If True, validate OHLCV data before processing
+    validation_cfg: DataValidationConfig = field(default_factory=DataValidationConfig)
+    timeframe: Optional[str] = None  # Optional timeframe for gap detection in validation
 
     rule_allowed_hours: Optional[List[int]] = None
     rule_allowed_weekdays: Optional[List[int]] = None
@@ -134,6 +139,39 @@ def build_feature_pipeline(
         df = load_ohlcv_csv(csv_ohlcv_path, config=data_cfg)
     else:
         raise ValueError("Either csv_ohlcv_path or df_ohlcv must be provided")
+
+    # Task S3.2: Validate OHLCV data if enabled
+    if cfg.validate_ohlcv:
+        validation_result = validate_ohlcv(
+            df,
+            cfg.validation_cfg.ohlcv,
+            timeframe=cfg.timeframe
+        )
+
+        # Handle validation based on mode
+        if cfg.validation_cfg.mode == "strict" and not validation_result.is_valid:
+            raise ValueError(f"OHLCV validation failed in strict mode:\n{validation_result.summary()}")
+        elif cfg.validation_cfg.mode == "warn" and not validation_result.is_valid:
+            logger.warning(f"OHLCV validation issues detected:\n{validation_result.summary()}")
+        # mode == "off" does nothing
+
+        # Log validation results to metadata
+        if not validation_result.is_valid or validation_result.warnings_count > 0:
+            meta = meta if 'meta' in locals() else {}
+            meta["validation_result"] = {
+                "is_valid": validation_result.is_valid,
+                "errors_count": validation_result.errors_count,
+                "warnings_count": validation_result.warnings_count,
+                "issues": [
+                    {
+                        "check_name": issue.check_name,
+                        "severity": issue.severity,
+                        "message": issue.message,
+                        "affected_count": issue.affected_count,
+                    }
+                    for issue in validation_result.issues
+                ]
+            }
 
     if cfg.use_base:
         df = add_basic_features(df, cfg.feature_cfg)

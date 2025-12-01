@@ -12,8 +12,12 @@ from .config import MarketStructureConfig
 from .fvg import detect_fvg_series
 from .regime import infer_trend_regime
 from .swings import detect_swings
+from .smoothing import smooth_price, filter_swing_points
 from .zones import build_zones
-from .types import Zone
+from .types import Zone, MarketStructureColumns
+
+# Import chop detector from microstructure
+from finantradealgo.microstructure.chop_detector import compute_chop
 
 
 @dataclass
@@ -49,7 +53,14 @@ class MarketStructureEngine:
                 - features: DataFrame with all market structure signal columns (ms_*)
                 - zones: List of all Zone objects (supply/demand)
         """
+        # --- Smoothing Pipeline ---
+        # Apply price smoothing first
+        df_smoothed = smooth_price(df, self.cfg.smoothing)
+
         out = pd.DataFrame(index=df.index)
+
+        # Add price_smooth to output
+        out["price_smooth"] = df_smoothed["price_smooth"]
 
         # --- Sprint 2: Swing and Trend Regime ---
         swings = detect_swings(df["high"], df["low"], self.cfg.swing)
@@ -63,8 +74,22 @@ class MarketStructureEngine:
             out.iloc[sh_indices, out.columns.get_loc("ms_swing_high")] = 1
         if sl_indices:
             out.iloc[sl_indices, out.columns.get_loc("ms_swing_low")] = 1
-        
+
+        # --- Swing Filtering ---
+        # Merge df with out to have all necessary columns for filtering
+        temp_df = pd.concat([df[["high", "low"]], out[["ms_swing_high", "ms_swing_low"]]], axis=1)
+        temp_df = filter_swing_points(temp_df, self.cfg.smoothing)
+
+        # Update swing columns after filtering
+        out["ms_swing_high"] = temp_df["ms_swing_high"]
+        out["ms_swing_low"] = temp_df["ms_swing_low"]
+
         out["ms_trend_regime"] = trend
+
+        # --- Chop Regime Detection ---
+        # Compute chop score (0 = trending, 1 = choppy)
+        chop_score = compute_chop(df["close"], self.cfg.chop)
+        out["ms_chop_regime"] = chop_score
 
         # --- Sprint 3: FVG, BoS, ChoCh ---
         fvg_up, fvg_down = detect_fvg_series(df, self.cfg.fvg)
@@ -108,5 +133,27 @@ class MarketStructureEngine:
 
         out["ms_zone_demand"] = demand_strength
         out["ms_zone_supply"] = supply_strength
+
+        # --- Enforce Output Contract ---
+        # Ensure all required columns exist with default values if missing
+        cols = MarketStructureColumns()
+        required_columns = {
+            cols.price_smooth: 0.0,
+            cols.swing_high: 0,
+            cols.swing_low: 0,
+            cols.fvg_up: 0,
+            cols.fvg_down: 0,
+            cols.trend_regime: 0,
+            cols.chop_regime: 0,
+            cols.zone_demand: 0.0,
+            cols.zone_supply: 0.0,
+            cols.bos_up: 0,
+            cols.bos_down: 0,
+            cols.choch: 0,
+        }
+
+        for col_name, default_value in required_columns.items():
+            if col_name not in out.columns:
+                out[col_name] = default_value
 
         return MarketStructureResult(features=out, zones=zones)

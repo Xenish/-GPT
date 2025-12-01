@@ -61,6 +61,44 @@ data:
     liquidation_wick_to_range_min: 0.5
     liquidation_volume_z: 2.0
 
+market_structure:
+  smoothing:
+    enabled: true
+    price_ma_window: 3
+    swing_min_distance: 3
+    swing_min_zscore: 0.5
+  chop:
+    lookback_period: 14
+
+microstructure:
+  enabled: true
+  max_lookback_seconds: 3600  # S2.E2: Max lookback window (in seconds) to prevent latency in live/paper
+  imbalance:
+    depth: 5
+    threshold: 2.0
+  sweep:
+    lookback_ms: 5000
+    notional_threshold: 50000.0
+  chop:
+    lookback_period: 14
+  vol_regime:
+    period: 20
+    z_score_window: 100
+    low_z_threshold: -1.5
+    high_z_threshold: 1.5
+  burst:
+    return_window: 5
+    z_score_window: 100
+    z_up_threshold: 2.0
+    z_down_threshold: 2.0
+  exhaustion:
+    min_consecutive_bars: 5
+    volume_z_score_window: 50
+    volume_z_threshold: -0.5
+  parabolic:
+    rolling_std_window: 20
+    curvature_threshold: 1.5
+
 features:
   use_base: true
   use_ta: true

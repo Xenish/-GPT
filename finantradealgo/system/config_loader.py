@@ -7,6 +7,15 @@ from typing import Any, Dict, Optional, List, Literal
 import os
 import yaml
 
+# Lazy import for market_structure to avoid circular dependencies
+def _load_market_structure_config():
+    from finantradealgo.market_structure.config import MarketStructureConfig
+    return MarketStructureConfig
+
+def _load_microstructure_config():
+    from finantradealgo.microstructure.config import MicrostructureConfig
+    return MicrostructureConfig
+
 def resolve_env_placeholders(value: Optional[str]) -> Optional[str]:
     if not isinstance(value, str):
         return value
@@ -726,6 +735,12 @@ def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
         merged["data_cfg"],
         merged.get("timeframe", "15m")
     )
+
+    # Load market_structure and microstructure configs
+    MarketStructureConfig = _load_market_structure_config()
+    MicrostructureConfig = _load_microstructure_config()
+    merged["market_structure_cfg"] = MarketStructureConfig.from_dict(merged.get("market_structure", {}))
+    merged["microstructure_cfg"] = MicrostructureConfig.from_dict(merged.get("microstructure", {}))
 
     return merged
 

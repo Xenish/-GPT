@@ -22,23 +22,91 @@ def compute_microstructure_df(
     """
     Computes all microstructure signals and returns them as a new DataFrame.
 
-    This is the main entry point for offline/batch feature generation.
+    **This is the SINGLE ENTRY-POINT for all microstructure feature computation.**
+
+    This function serves as the main entry point for offline/batch feature generation.
     Order book and trade-based features are optional and will only be computed
     if the corresponding DataFrames are provided.
 
+    Task S2.2: Single entry-point for microstructure features.
+
+    Design principles:
+    - All microstructure features must go through this function
+    - Direct calls to individual detectors (compute_chop, compute_bursts, etc.)
+      should only be made from within this function
+    - Features are standardized with ms_* prefix (defined in MicrostructureSignals.columns())
+    - Output contract is enforced: all columns are guaranteed to exist
+
     Args:
         df: Input DataFrame with OHLCV data (must have a datetime index).
-        cfg: Configuration for the microstructure signals.
+        cfg: Configuration for the microstructure signals. If None, uses defaults.
         trades_df: Optional DataFrame with trade data.
                    Must have DatetimeIndex if provided.
-                   Columns: side, price, size
+                   Required columns: side, price, size
+                   See MicrostructureInputSpec for full contract (Task S2.E1)
         book_df: Optional DataFrame with order book snapshot data.
+                 Must have DatetimeIndex if provided.
+                 Required columns: depends on depth (bid_price_0...N, ask_price_0...N, etc.)
 
     Returns:
         A new DataFrame containing only the microstructure signal columns.
+        All columns from MicrostructureSignals.columns() are guaranteed to exist.
+
+    Example:
+        >>> df = pd.read_csv("ohlcv.csv", index_col=0, parse_dates=True)
+        >>> cfg = MicrostructureConfig()
+        >>> features = compute_microstructure_df(df, cfg)
+        >>> assert "ms_chop" in features.columns
+        >>> assert "ms_burst_up" in features.columns
     """
     if cfg is None:
         cfg = MicrostructureConfig()
+
+    # --- Task S2.3: Enforce input contracts ---
+    # Validate OHLCV DataFrame
+    assert isinstance(df, pd.DataFrame), "df must be a pandas DataFrame"
+    assert not df.empty, "df cannot be empty"
+    required_ohlcv_cols = ["open", "high", "low", "close", "volume"]
+    for col in required_ohlcv_cols:
+        assert col in df.columns, f"df must contain '{col}' column"
+
+    # Validate trades_df contract if provided
+    if trades_df is not None:
+        assert isinstance(trades_df, pd.DataFrame), "trades_df must be a pandas DataFrame"
+        assert not trades_df.empty, "trades_df cannot be empty if provided"
+        required_trade_cols = ["side", "price", "size"]
+        for col in required_trade_cols:
+            assert col in trades_df.columns, (
+                f"trades_df must contain '{col}' column. "
+                f"Found columns: {list(trades_df.columns)}"
+            )
+        assert isinstance(trades_df.index, pd.DatetimeIndex), (
+            "trades_df must have DatetimeIndex"
+        )
+
+    # Validate book_df contract if provided
+    if book_df is not None:
+        assert isinstance(book_df, pd.DataFrame), "book_df must be a pandas DataFrame"
+        assert not book_df.empty, "book_df cannot be empty if provided"
+        assert isinstance(book_df.index, pd.DatetimeIndex), (
+            "book_df must have DatetimeIndex"
+        )
+        # Book validation is partial - full depth validation is done in compute_imbalance_from_df
+
+    # --- Task S2.E2: Truncate trades/book data to max_lookback_seconds ---
+    # This prevents excessive lookback in live/paper trading environments
+    if cfg.max_lookback_seconds > 0:
+        # Use the last timestamp in df as "now"
+        now = df.index[-1]
+        cutoff_time = now - pd.Timedelta(seconds=cfg.max_lookback_seconds)
+
+        # Truncate trades_df if provided
+        if trades_df is not None and not trades_df.empty:
+            trades_df = trades_df[trades_df.index >= cutoff_time]
+
+        # Truncate book_df if provided
+        if book_df is not None and not book_df.empty:
+            book_df = book_df[book_df.index >= cutoff_time]
 
     features_df = pd.DataFrame(index=df.index)
     all_cols = MicrostructureSignals.columns()
@@ -118,3 +186,7 @@ def compute_microstructure_df(
 
     # Ensure column order is consistent
     return features_df[all_cols]
+
+
+# Alias for consistency with naming convention
+compute_microstructure_features = compute_microstructure_df

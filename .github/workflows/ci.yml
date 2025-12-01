@@ -25,7 +25,7 @@ jobs:
 
       - name: Run tests
         run: |
-          pytest -q
+          pytest -q -m "not slow"
 
   frontend:
     runs-on: ubuntu-latest

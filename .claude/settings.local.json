@@ -6,7 +6,8 @@
       "Bash(python:*)",
       "Bash(if not exist \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\" mkdir \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\")",
       "Bash(cmd /c:*)",
-      "Bash(pytest:*)"
+      "Bash(pytest:*)",
+      "Bash(if not exist \"c:\\Users\\İlker Cem\\TradeProject\\docs\\dev\" mkdir \"c:\\Users\\İlker Cem\\TradeProject\\docs\\dev\")"
     ],
     "deny": [],
     "ask": []

@@ -7,7 +7,7 @@ name = "finantradealgo"
 version = "0.1.0"
 description = "FinanTradeAlgo research and backtesting toolkit"
 readme = "README.md"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
     "pandas",
     "numpy",

@@ -1,5 +1,9 @@
 # FinanTradeAlgo
 
+[![CI](https://github.com/<username>/TradeProject/actions/workflows/ci.yml/badge.svg)](https://github.com/<username>/TradeProject/actions/workflows/ci.yml)
+[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
+[![Node 20](https://img.shields.io/badge/node-20-green.svg)](https://nodejs.org/)
+
 ## Proje Özeti
 - **15m kripto araştırma ortamı**: Şu anda AIAUSDT ve BTCUSDT odaklı ama yapı diğer sembollere de kolayca genişliyor.
 - **Feature pipeline** fiyat/TA + microstructure + market structure + funding/OI + flow + sentiment kaynaklarını tek veri setinde birleştiriyor.

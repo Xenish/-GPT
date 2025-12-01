@@ -32,11 +32,11 @@ def test_detect_bullish_fvg(fvg_cfg):
         "low": [9, 10, 9, 12],
     }
     df = pd.DataFrame(data)
-    # Create a gap between bar 1 (high=10) and bar 3 (low=12)
-    # The FVG is on bar 2
+    # Create a gap between bar 1 (high=11) and bar 3 (low=12)
+    # The FVG is detected at bar 2 (middle bar of 3-bar pattern)
     fvg_up, fvg_down = detect_fvg_series(df, fvg_cfg)
 
-    assert fvg_up.iloc[1] > 0
+    assert fvg_up.iloc[2] > 0  # Fixed: bar 2 is the middle bar
     assert fvg_down.sum() == 0
 
 
@@ -47,11 +47,11 @@ def test_detect_bearish_fvg(fvg_cfg):
         "low": [9, 10, 9, 8],
     }
     df = pd.DataFrame(data)
-    # Create a gap between bar 1 (low=10) and bar 3 (high=10 -> changed to 8)
+    # Create a gap between bar 1 (low=10) and bar 3 (high=8)
     df.loc[3, "high"] = 8
     fvg_up, fvg_down = detect_fvg_series(df, fvg_cfg)
 
-    assert fvg_down.iloc[1] > 0
+    assert fvg_down.iloc[2] > 0  # Fixed: bar 2 is the middle bar
     assert fvg_up.sum() == 0
 
 

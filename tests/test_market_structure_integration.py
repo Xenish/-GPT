@@ -56,7 +56,7 @@ def test_market_structure_zones_are_identified():
         # 4. Another rally
         108, 112, 118, 125, 122,
         # 5. Price comes back to test the demand zone
-        115, 110, 105, 101.5, # <-- This bar should be in the zone
+        115, 110, 105, 99.3, # <-- This bar should be in the zone [99, 99.5] (from lows)
         # 6. Price moves away again
         104, 108, 111
     ]
@@ -81,11 +81,12 @@ def test_market_structure_zones_are_identified():
     zones = result.zones
 
     # 3. Assertions
-    # A demand zone should have formed around price 100-102 from the first two lows.
+    # A demand zone should have formed at [99, 99.5] from the two swing lows.
+    # (Swing lows use the LOW price, not close: low=close-1)
     assert zones, "The engine should have returned at least one zone"
     assert zones[0].type == "demand"
-    
-    # The bar at index 22 has close=101.5, which should be inside this zone.
+
+    # The bar at index 22 has close=99.3, which should be inside this zone.
     in_zone_bar_index = 22
     out_of_zone_bar_index = 17 # High up at 125
 

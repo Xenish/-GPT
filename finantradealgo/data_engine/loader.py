@@ -88,7 +88,12 @@ def load_ohlcv_csv(
     if config and hasattr(config, 'bars') and config.bars:
         # Validate timeframe for non-time event bars
         if config.bars.mode in ("volume", "dollar", "tick"):
-            if config.bars.source_timeframe != "1m":
+            if config.bars.source_timeframe is None:
+                logger.warning(
+                    "Event bars: source_timeframe not specified. "
+                    "It's recommended to set timeframe='1m' in your config when using event bars."
+                )
+            elif config.bars.source_timeframe != "1m":
                 raise ValueError(
                     f"Event bars currently only supported from 1m data; "
                     f"got source_timeframe={config.bars.source_timeframe!r}. "

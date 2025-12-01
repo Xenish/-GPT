@@ -97,7 +97,7 @@ def compute_microstructure_df(
     # This prevents excessive lookback in live/paper trading environments
     if cfg.max_lookback_seconds > 0:
         # Use the last timestamp in df as "now"
-        now = df.index[-1]
+        now = pd.Timestamp(df.index[-1])
         cutoff_time = now - pd.Timedelta(seconds=cfg.max_lookback_seconds)
 
         # Truncate trades_df if provided

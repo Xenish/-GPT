@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 # Ensure the project root is in the Python path
-ROOT = Path(__file__).resolve().parents[0]
+ROOT = Path(__file__).resolve().parents[1]  # Go up one level to project root
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
@@ -41,7 +41,7 @@ def generate_ms_golden_file():
     # 2. Run the Market Structure engine on the fixture
     print("Running Market Structure engine to generate golden file...")
     cfg = MarketStructureConfig()  # Use default config for consistency
-    df_with_features, _ = add_market_structure_features(df_fixture, cfg)
+    df_with_features = add_market_structure_features(df_fixture, cfg)
 
     # 3. Select only the market structure columns for the golden file
     ms_cols = [col for col in df_with_features.columns if col.startswith("ms_")]

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import logging
@@ -99,11 +99,15 @@ class FeaturePipelineConfig:
     market_structure: MarketStructureConfig = field(default_factory=MarketStructureConfig)
     rule_cfg: RuleSignalConfig = field(default_factory=RuleSignalConfig)
 
+    def copy(self):
+        """Create a shallow copy of this config."""
+        return replace(self)
+
 
 def build_feature_pipeline(
     csv_ohlcv_path: Optional[str] = None,
-    df_ohlcv: Optional[pd.DataFrame] = None,
     pipeline_cfg: Optional[FeaturePipelineConfig] = None,
+    df_ohlcv: Optional[pd.DataFrame] = None,
     csv_funding_path: Optional[str] = None,
     csv_oi_path: Optional[str] = None,
     flow_df: Optional[pd.DataFrame] = None,
@@ -115,8 +119,8 @@ def build_feature_pipeline(
 
     Args:
         csv_ohlcv_path: Path to OHLCV CSV file (deprecated, use df_ohlcv)
-        df_ohlcv: Pre-loaded OHLCV DataFrame (preferred)
         pipeline_cfg: Feature pipeline configuration
+        df_ohlcv: Pre-loaded OHLCV DataFrame (preferred)
         csv_funding_path: Path to funding rate CSV
         csv_oi_path: Path to open interest CSV
         flow_df: Pre-loaded flow features DataFrame

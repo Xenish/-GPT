@@ -8,7 +8,6 @@ import pandas as pd
 class Bar:
     """Represents a single bar of price data (OHLCV)."""
 
-    ts: pd.Timestamp
     open: float
     high: float
     low: float
@@ -16,7 +15,21 @@ class Bar:
     volume: float
     symbol: str = ""
     timeframe: str = ""
+    open_time: pd.Timestamp = None
+    close_time: pd.Timestamp = None
+    ts: pd.Timestamp = None
     extras: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        # Backward compatibility: if ts is provided but open_time is not, use ts as open_time
+        if self.ts is not None and self.open_time is None:
+            self.open_time = self.ts
+        # If open_time is provided but ts is not, use open_time as ts
+        if self.open_time is not None and self.ts is None:
+            self.ts = self.open_time
+        # If close_time is not provided, use open_time
+        if self.close_time is None and self.open_time is not None:
+            self.close_time = self.open_time
 
 
 @dataclass

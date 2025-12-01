@@ -16,9 +16,10 @@ def wave_data() -> pd.DataFrame:
     Generates a DataFrame with a clear wave pattern for testing swings.
     Peaks are at indices 5, 25. Troughs are at 15, 35.
     """
-    # Sine wave for prices: period=20, amplitude=10
+    # Cosine wave for prices: period=20, amplitude=10
+    # This creates peaks at indices 5, 25 and troughs at 15, 35
     indices = np.arange(40)
-    prices = 100 + 10 * np.sin(2 * np.pi * (indices - 5) / 20)
+    prices = 100 + 10 * np.cos(2 * np.pi * (indices - 5) / 20)
     df = pd.DataFrame({
         "high": prices,
         "low": prices,

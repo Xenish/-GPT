@@ -24,9 +24,8 @@ def compute_parabolic_trend(close: pd.Series, cfg: ParabolicConfig) -> pd.Series
         A series of integers representing the parabolic trend.
     """
     # 1. Calculate the second discrete derivative of the close price
-    second_diff = close.diff(2) - 2 * close.diff()
-    # A more direct way:
-    # second_diff = close - 2 * close.shift(1) + close.shift(2)
+    # Second derivative: f''(x) ≈ f(x) - 2*f(x-1) + f(x-2)
+    second_diff = close - 2 * close.shift(1) + close.shift(2)
 
     # 2. Normalize by rolling standard deviation of the close price
     rolling_std = close.rolling(

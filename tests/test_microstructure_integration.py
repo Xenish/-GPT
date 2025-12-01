@@ -13,9 +13,8 @@ from finantradealgo.microstructure.types import MicrostructureSignals
 
 def test_pipeline_adds_microstructure_columns(tmp_path: Path):
     """
-    Tests that the feature pipeline correctly adds the (currently empty)
-    microstructure feature columns when the flag is enabled.
-    This is an integration test for the feature pipeline skeleton.
+    Tests that the feature pipeline correctly adds microstructure feature columns
+    when the flag is enabled. This is an integration test for the feature pipeline.
     """
     # 1. Create a deterministic random OHLCV DataFrame
     np.random.seed(42)
@@ -72,9 +71,8 @@ def test_pipeline_adds_microstructure_columns(tmp_path: Path):
     # Check that all microstructure columns were added
     assert all(col in df_out.columns for col in ms_cols)
 
-    # Check that the columns are filled with 0.0 and have no NaNs
+    # Check that the columns have no NaNs (values can be non-zero if features are implemented)
     assert df_out[ms_cols].isnull().sum().sum() == 0
-    assert (df_out[ms_cols] == 0.0).all().all()
 
     # Check that original columns are still there
     assert "close" in df_out.columns

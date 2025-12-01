@@ -75,12 +75,15 @@ class TestFeaturePipelineMultiTF:
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = Path(tmpdir) / "system.yml"
 
+            # Convert Windows paths to forward slashes for YAML compatibility
+            ohlcv_data_posix = temp_ohlcv_data.replace('\\', '/')
+
             config_content = f"""
 symbol: "BTCUSDT"
 timeframe: "15m"
 
 data:
-  ohlcv_dir: "{temp_ohlcv_data}"
+  ohlcv_dir: "{ohlcv_data_posix}"
   external_dir: "data/external"
   features_dir: "data/features"
   symbols:
@@ -89,7 +92,7 @@ data:
   timeframes:
     - "15m"
     - "1h"
-  ohlcv_path_template: "{temp_ohlcv_data}/{{symbol}}_{{timeframe}}.csv"
+  ohlcv_path_template: "{ohlcv_data_posix}/{{symbol}}_{{timeframe}}.csv"
   lookback_days:
     "15m": 10
     "1h": 30

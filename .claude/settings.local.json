@@ -5,7 +5,8 @@
       "Bash(python -m pytest:*)",
       "Bash(python:*)",
       "Bash(if not exist \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\" mkdir \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\")",
-      "Bash(cmd /c:*)"
+      "Bash(cmd /c:*)",
+      "Bash(pytest:*)"
     ],
     "deny": [],
     "ask": []

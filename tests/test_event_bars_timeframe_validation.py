@@ -60,7 +60,7 @@ def test_event_bars_with_15m_source_timeframe_raises_error():
         data_cfg = DataConfig(bars=bars_cfg)
 
         # Should raise ValueError
-        with pytest.raises(ValueError, match="should be built from 1m data"):
+        with pytest.raises(ValueError, match="only supported from 1m data"):
             load_ohlcv_csv(csv_path, data_cfg)
     finally:
         import os
@@ -80,7 +80,7 @@ def test_event_bars_dollar_mode_with_5m_raises_error():
         data_cfg = DataConfig(bars=bars_cfg)
 
         # Should raise ValueError
-        with pytest.raises(ValueError, match="should be built from 1m data"):
+        with pytest.raises(ValueError, match="only supported from 1m data"):
             load_ohlcv_csv(csv_path, data_cfg)
     finally:
         import os
@@ -100,7 +100,7 @@ def test_event_bars_tick_mode_with_invalid_timeframe_raises_error():
         data_cfg = DataConfig(bars=bars_cfg)
 
         # Should raise ValueError
-        with pytest.raises(ValueError, match="should be built from 1m data"):
+        with pytest.raises(ValueError, match="only supported from 1m data"):
             load_ohlcv_csv(csv_path, data_cfg)
     finally:
         import os

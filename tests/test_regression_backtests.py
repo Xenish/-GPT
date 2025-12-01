@@ -1,10 +1,15 @@
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 import pandas as pd
 import pytest
+
+# Set dummy FCM key for testing if not already set
+if "FCM_SERVER_KEY" not in os.environ:
+    os.environ["FCM_SERVER_KEY"] = "dummy_key_for_testing"
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
 from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config

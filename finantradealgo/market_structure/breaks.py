@@ -37,6 +37,8 @@ def detect_bos_choch(
     # --- ChoCh Detection (Vectorized) ---
     # A ChoCh occurs whenever the trend regime changes value.
     choch = (trend_regime.diff() != 0).astype(np.int8)
+    # Exclude the first value (NaN from diff) from being considered a change
+    choch.iloc[0] = 0
 
     # --- BoS Detection (Iterative) ---
     # This part is iterative as it needs to track the last relevant swing.

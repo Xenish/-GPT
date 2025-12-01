@@ -11,7 +11,7 @@ from finantradealgo.execution.exchange_client import (
     ExchangeClientBase as RawExchangeClient,
 )
 from finantradealgo.execution.execution_client import ExchangeExecutionClient
-from finantradealgo.system.config_loader import ExchangeConfig
+from finantradealgo.system.config_loader import ExchangeConfig, ExchangeRiskConfig
 
 
 def _build_cfg(**override):
@@ -94,7 +94,8 @@ def test_place_order_calls_endpoint(monkeypatch):
 def test_exchange_execution_client_submits_orders():
     raw = MagicMock(spec=RawExchangeClient)
     cfg = _build_cfg(symbol_mapping={"FOO": "FOOUSDT"})
-    exec_client = ExchangeExecutionClient(raw, cfg, run_id="run")
+    risk_cfg = ExchangeRiskConfig()
+    exec_client = ExchangeExecutionClient(raw, cfg, risk_cfg, run_id="run")
     raw.place_order.return_value = {"orderId": 55}
     exec_client.submit_order("FOO", "BUY", 1.0, "MARKET", price=10.0)
     args, kwargs = raw.place_order.call_args

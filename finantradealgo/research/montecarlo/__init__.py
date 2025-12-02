@@ -13,6 +13,12 @@ from finantradealgo.research.montecarlo.models import (
     StressTestScenario,
     STRESS_SCENARIOS,
 )
+from finantradealgo.research.montecarlo.simulator import MonteCarloSimulator
+from finantradealgo.research.montecarlo.analysis import (
+    MonteCarloAnalyzer,
+    LuckVsSkillAnalysis,
+    RegimeAnalysis,
+)
 from finantradealgo.research.montecarlo.resampler import BootstrapResampler
 from finantradealgo.research.montecarlo.risk_metrics import (
     RiskMetricsCalculator,
@@ -31,8 +37,14 @@ __all__ = [
     "MonteCarloResult",
     "StressTestScenario",
     "RiskAssessment",
+    "LuckVsSkillAnalysis",
+    "RegimeAnalysis",
     # Scenarios
     "STRESS_SCENARIOS",
+    # Simulator (High-level API)
+    "MonteCarloSimulator",
+    # Analyzer
+    "MonteCarloAnalyzer",
     # Resampler
     "BootstrapResampler",
     # Risk Metrics

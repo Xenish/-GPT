@@ -1,0 +1,52 @@
+{
+  "title": "FinanTrade - Strategy Performance",
+  "uid": "finantrade-strategy-performance",
+  "schemaVersion": 36,
+  "version": 1,
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "Strategy Signals",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "sum by (strategy_name) (rate(finantrade_strategy_signals_total[5m]))",
+          "legendFormat": "{{strategy_name}} signals/s"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Strategy Latency p95 (ms)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(finantrade_strategy_signal_latency_ms_bucket[5m])) by (le, strategy_name))",
+          "legendFormat": "{{strategy_name}} p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Backtest Runtime (p95 seconds)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(finantrade_backtest_runtime_seconds_bucket[5m])) by (le, name))",
+          "legendFormat": "{{name}} p95"
+        }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Live Trade Slippage (bps p95)",
+      "datasource": "Prometheus",
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.95, sum(rate(finantrade_live_trade_slippage_bps_bucket[5m])) by (le, symbol, side))",
+          "legendFormat": "{{symbol}} {{side}} p95"
+        }
+      ]
+    }
+  ]
+}

@@ -12,6 +12,7 @@ from finantradealgo.research.walkforward.models import (
     WalkForwardResult,
     WalkForwardComparison,
 )
+from finantradealgo.research.walkforward.engine import WalkForwardEngine
 from finantradealgo.research.walkforward.optimizer import WalkForwardOptimizer
 from finantradealgo.research.walkforward.validator import (
     OutOfSampleValidator,
@@ -36,6 +37,8 @@ __all__ = [
     "WalkForwardComparison",
     "ValidationReport",
     "EfficiencyMetrics",
+    # Engine (High-level API)
+    "WalkForwardEngine",
     # Optimizer
     "WalkForwardOptimizer",
     # Validator

@@ -1,12 +1,23 @@
 from __future__ import annotations
 
 import json
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 import pandas as pd
 
 from finantradealgo.core.portfolio import Portfolio, Position
+from finantradealgo.execution import (
+    ExecutionContext,
+    ExecutionSimulationConfig,
+    OrderSide,
+    OrderType,
+    OrderStatus,
+    SimulatedFill,
+)
+from finantradealgo.execution.latency_simulator import LatencyModelConfig, LatencySimulator
+from finantradealgo.execution.slippage_simulator import SlippageModelConfig, SlippageSimulator
 from .client_base import ExecutionClientBase
 
 
@@ -15,6 +26,10 @@ class PaperExecutionClient(ExecutionClientBase):
     Minimal execution adapter that mimics live trading using an in-memory
     portfolio. It accepts signals from the live engine and records fills
     plus equity curve snapshots to CSV for quick inspection.
+
+    Supports simple_mode (legacy instant fills) and a future realistic_mode
+    where slippage and latency simulators will be applied. The default keeps
+    the existing simple_mode behavior.
     """
 
     def __init__(
@@ -26,6 +41,11 @@ class PaperExecutionClient(ExecutionClientBase):
         output_dir: str = "outputs/live_paper",
         state_path: Optional[str] = None,
         symbol: str = "UNKNOWN",
+        simulation_config: ExecutionSimulationConfig | None = None,
+        slippage_model_config: SlippageModelConfig | None = None,
+        latency_model_config: LatencyModelConfig | None = None,
+        simple_mode: bool = True,
+        realistic_mode: Optional[bool] = None,
     ):
         self.portfolio = Portfolio(
             initial_cash=initial_cash,
@@ -43,6 +63,16 @@ class PaperExecutionClient(ExecutionClientBase):
         self._active_trade: Optional[Dict[str, Any]] = None
         self.state_path = (
             Path(state_path) if state_path else self.output_dir / "paper_state.json"
+        )
+        self.simulation_config = simulation_config or ExecutionSimulationConfig()
+        self.slippage_simulator = SlippageSimulator(slippage_model_config or SlippageModelConfig())
+        self.latency_simulator = LatencySimulator(latency_model_config or LatencyModelConfig())
+        self.simple_mode = simple_mode
+        # realistic_mode determined by simulation toggles unless explicitly overridden
+        self.realistic_mode = (
+            realistic_mode
+            if realistic_mode is not None
+            else (self.simulation_config.enable_slippage or self.simulation_config.enable_latency)
         )
 
     # -----------------
@@ -129,7 +159,8 @@ class PaperExecutionClient(ExecutionClientBase):
     ) -> Optional[Dict]:
         side = side.upper()
         order_type = order_type.upper()
-        if order_type != "MARKET":
+        is_realistic = self.realistic_mode and not self.simple_mode
+        if not is_realistic and order_type != "MARKET":
             raise ValueError("Paper client only supports MARKET orders.")
 
         trade_price = price if price is not None else self._last_price
@@ -137,9 +168,128 @@ class PaperExecutionClient(ExecutionClientBase):
             raise ValueError("Price required for paper fills.")
         timestamp = self._last_timestamp or pd.Timestamp.utcnow()
 
+        if not is_realistic:
+            return self._submit_simple_order(
+                symbol=symbol,
+                side=side,
+                qty=qty,
+                order_type=order_type,
+                price=trade_price,
+                timestamp=timestamp,
+                reduce_only=reduce_only,
+                client_order_id=client_order_id,
+            )
+
+        ctx = self._build_execution_context(
+            symbol=symbol,
+            side=side,
+            order_type=order_type,
+            qty=qty,
+            limit_price=price,
+            timestamp=timestamp,
+        )
+        fills = self._simulate_slippage(ctx)
+        if not fills:
+            return None
+
+        processed_fills: List[SimulatedFill] = []
+        for fill in fills:
+            exec_ts = fill.timestamp
+            if self.simulation_config.enable_latency:
+                exec_ts = self.latency_simulator.apply_latency(ctx, base_timestamp=fill.timestamp)
+            processed_fills.append(
+                SimulatedFill(
+                    price=fill.price,
+                    qty=fill.qty,
+                    timestamp=exec_ts,
+                    liquidity_taken=fill.liquidity_taken,
+                    slippage=fill.slippage,
+                )
+            )
+
+        total_filled_qty = sum(f.qty for f in processed_fills)
+        if total_filled_qty <= 0:
+            return None
+
+        avg_price = sum(f.price * f.qty for f in processed_fills) / total_filled_qty
+        exec_timestamp = max((f.timestamp for f in processed_fills), default=timestamp)
+        status = (
+            OrderStatus.FILLED.value
+            if total_filled_qty >= (qty or 0)
+            else OrderStatus.PARTIALLY_FILLED.value
+        )
+
         if reduce_only:
             trade = self._close_position(
-                price=trade_price,
+                price=avg_price,
+                timestamp=exec_timestamp,
+                reason="REDUCE_ONLY",
+            )
+            if trade is not None:
+                trade["client_order_id"] = client_order_id
+                trade["order_status"] = status
+            return trade
+
+        current = self.portfolio.position
+        if current is not None:
+            if current.side == "LONG" and side == "SELL":
+                trade = self._close_position(
+                    price=avg_price,
+                    timestamp=exec_timestamp,
+                    reason="OPPOSITE_SIGNAL",
+                )
+                if trade is not None:
+                    trade["client_order_id"] = client_order_id
+                    trade["order_status"] = status
+                return trade
+            if current.side == "SHORT" and side == "BUY":
+                trade = self._close_position(
+                    price=avg_price,
+                    timestamp=exec_timestamp,
+                    reason="OPPOSITE_SIGNAL",
+                )
+                if trade is not None:
+                    trade["client_order_id"] = client_order_id
+                    trade["order_status"] = status
+                return trade
+
+        if qty is None or qty <= 0:
+            return None
+        mapped_side = "LONG" if side == "BUY" else "SHORT"
+        trade = self._open_position(
+            side=mapped_side,
+            price=avg_price,
+            size=total_filled_qty,
+            timestamp=exec_timestamp,
+        )
+        if trade is not None:
+            trade["client_order_id"] = client_order_id
+            trade["order_status"] = status
+            if total_filled_qty < qty:
+                # TODO: track remaining_qty to allow subsequent partial fills
+                trade["remaining_qty"] = qty - total_filled_qty
+        return trade
+
+    def _submit_simple_order(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        qty: float,
+        order_type: str,
+        price: float,
+        timestamp,
+        reduce_only: bool,
+        client_order_id: Optional[str],
+    ) -> Optional[Dict]:
+        side = side.upper()
+        order_type = order_type.upper()
+        if order_type != "MARKET":
+            raise ValueError("Paper client only supports MARKET orders.")
+
+        if reduce_only:
+            trade = self._close_position(
+                price=price,
                 timestamp=timestamp,
                 reason="REDUCE_ONLY",
             )
@@ -150,30 +300,102 @@ class PaperExecutionClient(ExecutionClientBase):
         current = self.portfolio.position
         if current is not None:
             if current.side == "LONG" and side == "SELL":
-                return self._close_position(
-                    price=trade_price,
+                trade = self._close_position(
+                    price=price,
                     timestamp=timestamp,
                     reason="OPPOSITE_SIGNAL",
                 )
+                if trade is not None:
+                    trade["client_order_id"] = client_order_id
+                return trade
             if current.side == "SHORT" and side == "BUY":
-                return self._close_position(
-                    price=trade_price,
+                trade = self._close_position(
+                    price=price,
                     timestamp=timestamp,
                     reason="OPPOSITE_SIGNAL",
                 )
+                if trade is not None:
+                    trade["client_order_id"] = client_order_id
+                return trade
 
         if qty is None or qty <= 0:
             return None
         mapped_side = "LONG" if side == "BUY" else "SHORT"
         trade = self._open_position(
             side=mapped_side,
-            price=trade_price,
+            price=price,
             size=qty,
             timestamp=timestamp,
         )
         if trade is not None:
             trade["client_order_id"] = client_order_id
         return trade
+
+    def _build_execution_context(
+        self,
+        *,
+        symbol: str,
+        side: str,
+        order_type: str,
+        qty: float,
+        limit_price: float | None,
+        timestamp,
+    ) -> ExecutionContext:
+        ts = pd.to_datetime(timestamp)
+        side_enum = OrderSide(side)
+        order_type_enum = OrderType(order_type) if order_type in OrderType._value2member_map_ else OrderType.MARKET
+        volatility, liquidity_regime = self._infer_market_conditions(symbol, ts)
+        spread = None
+        best_bid = None
+        best_ask = None
+        mid_price = self._last_price
+        # TODO: integrate with live order book / market data stream for available volumes.
+        available_volume: Dict[str, float] | None = None
+        return ExecutionContext(
+            symbol=symbol,
+            side=side_enum,
+            order_type=order_type_enum,
+            order_qty=qty,
+            limit_price=limit_price,
+            timestamp=ts,
+            mid_price=mid_price,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            spread=spread,
+            available_volume=available_volume,
+            volatility=volatility,
+            liquidity_regime=liquidity_regime,
+            metadata=self.simulation_config.metadata,
+        )
+
+    def _simulate_slippage(self, ctx: ExecutionContext) -> List[SimulatedFill]:
+        if not self.simulation_config.enable_slippage:
+            reference_price = ctx.limit_price or ctx.mid_price or self._last_price
+            if reference_price is None:
+                return []
+            return [
+                SimulatedFill(
+                    price=reference_price,
+                    qty=ctx.order_qty,
+                    timestamp=ctx.timestamp,
+                    liquidity_taken=None,
+                    slippage=0.0,
+                )
+            ]
+        return list(self.slippage_simulator.simulate_fill(ctx, simulation_config=self.simulation_config))
+
+    def _infer_market_conditions(self, symbol: str, now: datetime) -> tuple[float | None, str]:
+        """
+        Infer volatility and liquidity_regime for the given symbol/time.
+
+        Currently a placeholder that defaults to simulation_config defaults.
+        TODO: Use recent returns or order book depth to derive volatility and
+        liquidity regime buckets (e.g., normal, high_volatility, low_liquidity).
+        """
+        _ = symbol  # unused for now
+        _ = now
+        default_regime = self.simulation_config.default_liquidity_regime
+        return None, default_regime
 
     def cancel_order(self, symbol: str, order_id: str | int) -> None:
         return None

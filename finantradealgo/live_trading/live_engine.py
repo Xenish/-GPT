@@ -13,8 +13,15 @@ import pandas as pd
 
 from finantradealgo.core.strategy import BaseStrategy, StrategyContext
 from finantradealgo.data_engine.live_data_source import AbstractLiveDataSource, Bar
+from finantradealgo.execution import ExecutionClient
 from finantradealgo.execution.client_base import ExecutionClientBase
 from finantradealgo.execution.execution_client import ExchangeRiskLimitError
+from finantradealgo.live_trading.routing import (
+    ExchangeRoutingEngine,
+    RoutingConfig,
+    RoutingDecision,
+)
+from finantradealgo.exchanges import ExchangeId
 from finantradealgo.risk.risk_engine import RiskEngine
 from finantradealgo.system.config_loader import LiveConfig
 from finantradealgo.core.portfolio import Position
@@ -24,8 +31,10 @@ from finantradealgo.system.kill_switch import KillSwitch, KillSwitchReason, Kill
 class LiveEngine:
     """
     Orchestrates the live trading workflow (data -> strategy -> risk -> execution).
-    The engine is intentionally lightweight so we can swap data sources and
-    execution adapters during development.
+    Supports multi-exchange order routing via ExchangeRoutingEngine and per-exchange
+    execution clients. To wire up, construct SymbolRegistry + MultiExchangeAggregator +
+    ExchangeHealthMonitor, build a RoutingConfig, instantiate ExchangeRoutingEngine,
+    create per-exchange ExecutionClient implementations, then pass them to LiveEngine.
     """
 
     def __init__(
@@ -34,7 +43,9 @@ class LiveEngine:
         system_cfg: Dict[str, Any],
         strategy: BaseStrategy,
         risk_engine: RiskEngine,
-        execution_client: ExecutionClientBase,
+        execution_client: ExecutionClientBase | None,
+        routing_engine: Optional[ExchangeRoutingEngine] = None,
+        execution_clients: Optional[Dict[ExchangeId, ExecutionClient]] = None,
         data_source: AbstractLiveDataSource,
         run_id: Optional[str] = None,
         logger: Optional[logging.Logger] = None,
@@ -55,7 +66,13 @@ class LiveEngine:
         self.data_source = data_source
         self.strategy = strategy
         self.risk_engine = risk_engine
+        self.routing_engine = routing_engine
+        self.execution_clients = execution_clients or {}
         self.execution_client = execution_client
+        if self.execution_client is None:
+            self.execution_client = self._select_default_execution_client()
+        if self.execution_client is None:
+            raise ValueError("An execution_client or execution_clients mapping is required.")
         self.logger = logger or logging.getLogger(__name__)
         self.run_id = run_id or "live_engine"
         self.strategy_name = strategy_name
@@ -382,6 +399,40 @@ class LiveEngine:
     # -------------------
     # Internal utilities
     # -------------------
+    def _select_default_execution_client(self) -> ExecutionClientBase | ExecutionClient | None:
+        """Pick a default execution client if mapping is provided but single client is not."""
+
+        if not self.execution_clients:
+            return None
+        cfg_exchange = getattr(self.config, "exchange", None)
+        if isinstance(cfg_exchange, ExchangeId) and cfg_exchange in self.execution_clients:
+            return self.execution_clients[cfg_exchange]
+        if isinstance(cfg_exchange, str):
+            for ex_id, client in self.execution_clients.items():
+                if getattr(ex_id, "name", "").lower() == cfg_exchange.lower():
+                    return client
+        return next(iter(self.execution_clients.values()))
+
+    def _route_execution(
+        self, internal_symbol: str
+    ) -> tuple[ExecutionClientBase | ExecutionClient, str, RoutingDecision | None]:
+        """
+        Resolve execution client and exchange symbol for an internal symbol.
+
+        Returns (client, exchange_symbol, routing_decision|None).
+        """
+
+        if self.routing_engine and self.execution_clients:
+            decision = self.routing_engine.choose_exchange(internal_symbol)
+            exec_client = self.execution_clients.get(decision.chosen_exchange)
+            if exec_client is None:
+                raise ValueError(
+                    f"No execution client configured for exchange {decision.chosen_exchange}"
+                )
+            return exec_client, decision.symbol_mapping.exchange_symbol, decision
+
+        return self.execution_client, internal_symbol, None
+
     def _apply_pending_action(self) -> None:
         action = self.requested_action
         if not action:
@@ -444,28 +495,47 @@ class LiveEngine:
         client_order_id: Optional[str] = None,
         **extra: Any,
     ) -> Dict[str, Any]:
+        exec_client, exchange_symbol, decision = self._route_execution(symbol)
+        route_label = (
+            f"{decision.chosen_exchange.name}:{decision.reason}" if decision else "single_exchange"
+        )
         attempts = max(1, int(getattr(self.config, "order_retry_limit", 1) or 1))
         wait_seconds = max(0.0, float(getattr(self.config, "order_timeout_seconds", 0)))
         last_exc: Optional[Exception] = None
         for attempt in range(attempts):
             try:
-                return self.execution_client.submit_order(
-                    symbol=symbol,
-                    side=side,
-                    qty=qty,
-                    order_type=order_type,
-                    price=price,
-                    reduce_only=reduce_only,
-                    client_order_id=client_order_id,
-                    **extra,
-                )
+                submit_fn = getattr(exec_client, "submit_order", None)
+                place_fn = getattr(exec_client, "place_order", None) if submit_fn is None else None
+                if callable(submit_fn):
+                    return submit_fn(
+                        symbol=exchange_symbol,
+                        side=side,
+                        qty=qty,
+                        order_type=order_type,
+                        price=price,
+                        reduce_only=reduce_only,
+                        client_order_id=client_order_id,
+                        **extra,
+                    )
+                if callable(place_fn):
+                    return place_fn(
+                        symbol=exchange_symbol,
+                        side=side,
+                        qty=qty,
+                        order_type=order_type,
+                        price=price,
+                        reduce_only=reduce_only,
+                        client_order_id=client_order_id,
+                        **extra,
+                    )
+                raise TypeError("Execution client lacks submit_order/place_order implementation.")
             except ExchangeRiskLimitError as exc:
                 self._handle_exchange_limit_error(exc)
                 return {}
             except Exception as exc:  # pragma: no cover - network/exchange errors
                 last_exc = exc
                 self.logger.exception(
-                    "Order submit failed attempt %s/%s: %s", attempt + 1, attempts, exc
+                    "Order submit failed attempt %s/%s [%s]: %s", attempt + 1, attempts, route_label, exc
                 )
                 if attempt < attempts - 1 and wait_seconds > 0:
                     time.sleep(min(wait_seconds, 1.0))

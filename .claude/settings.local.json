@@ -16,7 +16,8 @@
       "Bash(git push:*)",
       "Bash(git archive:*)",
       "Bash(npm run lint:*)",
-      "Bash(if exist \".next\" rmdir /s /q \".next\")"
+      "Bash(if exist \".next\" rmdir /s /q \".next\")",
+      "Bash(if not exist \"finantradealgo\\research\\walkforward\\examples\" mkdir \"finantradealgo\\research\\walkforward\\examples\")"
     ],
     "deny": [],
     "ask": []

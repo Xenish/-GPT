@@ -4,7 +4,7 @@ import json
 import os
 import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime
+from datetime import datetime, UTC
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
@@ -216,7 +216,7 @@ def save_sklearn_model(
 ) -> ModelMetadata:
     os.makedirs(base_dir, exist_ok=True)
 
-    ts_dt = datetime.utcnow()
+    ts_dt = datetime.now(UTC)
     ts_id = ts_dt.strftime("%Y%m%d_%H%M%S")
     created_iso = ts_dt.isoformat()
     model_id = f"{symbol}_{timeframe}_{model_cfg.model_type}_{ts_id}"

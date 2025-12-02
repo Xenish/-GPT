@@ -46,7 +46,7 @@ def _check_heartbeat_once(
     except ValueError:
         print(f"[WATCHDOG] Invalid heartbeat timestamp: {updated_at_raw}")
         return
-    delta = (dt.datetime.utcnow() - updated_at).total_seconds()
+    delta = (dt.datetime.now(dt.timezone.utc) - updated_at).total_seconds()
     if delta > max_stale_seconds:
         msg = (
             f"Heartbeat stale ({delta:.0f}s). Live process may be stalled "

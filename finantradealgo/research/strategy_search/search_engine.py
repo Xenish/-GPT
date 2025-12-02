@@ -81,12 +81,31 @@ def random_search(
     n_samples: int,
     sys_cfg: Optional[Dict[str, Any]] = None,
     param_space: Optional[ParamSpace] = None,
+    random_seed: Optional[int] = None,
 ) -> List[Dict[str, Any]]:
     """
     Sample random parameter sets from the strategy's ParamSpace and evaluate each once.
+
+    Args:
+        strategy_name: Strategy to search
+        n_samples: Number of random samples
+        sys_cfg: System configuration
+        param_space: Parameter space (uses strategy default if None)
+        random_seed: Random seed for reproducibility
+
+    Returns:
+        List of evaluation results with status and error handling
     """
+    import random
+    import numpy as np
+
     if n_samples <= 0:
         return []
+
+    # Set random seed for reproducibility
+    if random_seed is not None:
+        random.seed(random_seed)
+        np.random.seed(random_seed)
 
     cfg = sys_cfg or load_system_config()
     space = param_space or getattr(get_strategy_meta(strategy_name), "param_space", None)
@@ -94,9 +113,103 @@ def random_search(
         raise ValueError(f"Strategy '{strategy_name}' has no ParamSpace defined.")
 
     results: List[Dict[str, Any]] = []
-    for _ in range(n_samples):
+    for i in range(n_samples):
         params = sample_params(space)
+
+        # Error handling: wrap evaluation in try/except
+        try:
+            result = evaluate_strategy_once(strategy_name, params=params, sys_cfg=cfg)
+            result["status"] = "ok"
+            result["error_message"] = None
+        except Exception as e:
+            # On error, create failed result with NaN metrics
+            result = {
+                "params": params,
+                "cum_return": None,
+                "sharpe": None,
+                "max_drawdown": None,
+                "win_rate": None,
+                "trade_count": None,
+                "status": "error",
+                "error_message": str(e)[:120],  # Truncate to 120 chars
+            }
+
+        results.append(result)
+
+    return results
+
+
+def grid_search(
+    strategy_name: str,
+    sys_cfg: Optional[Dict[str, Any]] = None,
+    param_space: Optional[ParamSpace] = None,
+    grid_points: Optional[Dict[str, int]] = None,
+) -> List[Dict[str, Any]]:
+    """
+    Grid search over parameter space.
+
+    Args:
+        strategy_name: Name of strategy to optimize
+        sys_cfg: System configuration (optional)
+        param_space: Parameter space (optional, uses strategy's default if None)
+        grid_points: Number of grid points per parameter (default: 3 for numeric, all for categorical)
+
+    Returns:
+        List of evaluation results
+
+    Note:
+        Grid search can be computationally expensive. For a param space with N parameters
+        and G grid points each, total evaluations = G^N.
+        Use with caution for high-dimensional spaces.
+    """
+    import numpy as np
+    from itertools import product
+
+    cfg = sys_cfg or load_system_config()
+    space = param_space or getattr(get_strategy_meta(strategy_name), "param_space", None)
+    if not space:
+        raise ValueError(f"Strategy '{strategy_name}' has no ParamSpace defined.")
+
+    # Generate grid for each parameter
+    param_grids: Dict[str, List[Any]] = {}
+    default_grid_points = 3
+
+    for param_name, spec in space.items():
+        n_points = grid_points.get(param_name, default_grid_points) if grid_points else default_grid_points
+
+        if spec.type == "int":
+            low = int(spec.low)
+            high = int(spec.high)
+            param_grids[param_name] = list(np.linspace(low, high, n_points, dtype=int))
+
+        elif spec.type == "float":
+            low = float(spec.low)
+            high = float(spec.high)
+            if spec.log:
+                param_grids[param_name] = list(np.logspace(np.log10(low), np.log10(high), n_points))
+            else:
+                param_grids[param_name] = list(np.linspace(low, high, n_points))
+
+        elif spec.type == "bool":
+            param_grids[param_name] = [False, True]
+
+        elif spec.type == "categorical":
+            param_grids[param_name] = list(spec.choices)
+
+    # Generate all combinations
+    param_names = list(param_grids.keys())
+    param_values = [param_grids[name] for name in param_names]
+    combinations = list(product(*param_values))
+
+    # Evaluate each combination
+    results: List[Dict[str, Any]] = []
+    total_combos = len(combinations)
+    print(f"Grid search: {total_combos} combinations to evaluate")
+
+    for combo in combinations:
+        params = dict(zip(param_names, combo))
         results.append(evaluate_strategy_once(strategy_name, params=params, sys_cfg=cfg))
+
     return results
 
 
@@ -106,7 +219,8 @@ def random_search(
 
 # Minimum required columns for results.parquet
 REQUIRED_RESULT_COLUMNS = {
-    "params", "cum_return", "sharpe", "max_drawdown", "win_rate", "trade_count"
+    "params", "cum_return", "sharpe", "max_drawdown", "win_rate", "trade_count",
+    "status", "error_message"
 }
 
 BASE_OUTPUT_DIR = Path("outputs") / "strategy_search"
@@ -158,7 +272,7 @@ def run_random_search(
     This function:
     1. Runs random_search() to get results
     2. Saves results to results.parquet
-    3. Saves job metadata to meta.json with git_sha
+    3. Saves job metadata to meta.json with git_sha + data_snapshot
     4. Copies config snapshot to job directory
     5. Validates results format
 
@@ -173,12 +287,13 @@ def run_random_search(
     Raises:
         ValueError: If results validation fails
     """
-    # Run the search
+    # Run the search with seed
     results = random_search(
         strategy_name=job.strategy,
         n_samples=job.n_samples,
         sys_cfg=sys_cfg,
         param_space=param_space,
+        random_seed=job.seed,
     )
 
     # Create job directory
@@ -191,9 +306,11 @@ def run_random_search(
     # Validate results format
     _validate_results(results_df)
 
-    # Save results.parquet
-    results_path = job_dir / "results.parquet"
-    results_df.to_parquet(results_path, index=False)
+    # Save results in both parquet (efficient) and CSV (human-readable)
+    results_parquet_path = job_dir / "results.parquet"
+    results_csv_path = job_dir / "results.csv"
+    results_df.to_parquet(results_parquet_path, index=False)
+    results_df.to_csv(results_csv_path, index=False)
 
     # Get git SHA
     git_sha = _get_git_sha()
@@ -206,11 +323,28 @@ def run_random_search(
         shutil.copy2(config_src, config_dst)
         job.config_snapshot_relpath = config_snapshot_name
 
-    # Update job with git_sha and save meta.json
+    # Count successful vs failed evaluations
+    n_success = (results_df["status"] == "ok").sum() if "status" in results_df.columns else len(results_df)
+    n_errors = (results_df["status"] == "error").sum() if "status" in results_df.columns else 0
+
+    # Get data snapshot info (for reproducibility)
+    data_cfg = sys_cfg.get("data_cfg") if sys_cfg else None
+    data_snapshot = {}
+    if data_cfg:
+        data_snapshot = {
+            "ohlcv_dir": getattr(data_cfg, "ohlcv_dir", "unknown"),
+            "lookback_days": getattr(data_cfg, "lookback_days", {}),
+        }
+
+    # Update job with git_sha, data snapshot and save meta.json
     meta_dict = job.to_dict()
     meta_dict["git_sha"] = git_sha
-    meta_dict["results_path"] = str(results_path.relative_to(job_dir))
+    meta_dict["results_path_parquet"] = str(results_parquet_path.relative_to(job_dir))
+    meta_dict["results_path_csv"] = str(results_csv_path.relative_to(job_dir))
     meta_dict["n_results"] = len(results_df)
+    meta_dict["n_success"] = int(n_success)
+    meta_dict["n_errors"] = int(n_errors)
+    meta_dict["data_snapshot"] = data_snapshot
 
     meta_path = job_dir / "meta.json"
     import json
@@ -221,11 +355,12 @@ def run_random_search(
     print(f"   Job ID: {job.job_id}")
     print(f"   Strategy: {job.strategy}")
     print(f"   Samples: {job.n_samples}")
-    print(f"   Results: {len(results_df)} evaluations")
+    print(f"   Results: {len(results_df)} evaluations ({n_success} success, {n_errors} errors)")
     print(f"   Output: {job_dir}")
     print(f"   Git SHA: {git_sha or 'N/A'}")
+    print(f"   Random Seed: {job.seed or 'N/A'}")
 
     return job_dir
 
 
-__all__ = ["evaluate_strategy_once", "random_search", "run_random_search"]
+__all__ = ["evaluate_strategy_once", "random_search", "grid_search", "run_random_search"]

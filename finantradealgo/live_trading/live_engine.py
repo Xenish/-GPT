@@ -149,7 +149,7 @@ class LiveEngine:
             initial_cash,
             self.pipeline_meta.get("pipeline_version", "unknown"),
         )
-        self.start_time = pd.Timestamp.utcnow()
+        self.start_time = pd.Timestamp.now(tz="UTC")
         self.data_source.connect()
         self._refresh_positions()
         last_timestamp = self.start_time
@@ -168,7 +168,7 @@ class LiveEngine:
                 except Exception:
                     self.logger.exception("Error while processing bar.")
                     if self.kill_switch:
-                        self.kill_switch.register_exception(dt.datetime.utcnow())
+                        self.kill_switch.register_exception(dt.datetime.now(dt.timezone.utc))
                         self._evaluate_kill_switch(
                             equity=float(
                                 self.execution_client.get_portfolio().get("equity", 0.0)
@@ -176,7 +176,7 @@ class LiveEngine:
                             day_key=self._last_bar_timestamp.normalize()
                             if self._last_bar_timestamp
                             else None,
-                            timestamp=self._last_bar_timestamp or pd.Timestamp.utcnow(),
+                            timestamp=self._last_bar_timestamp or pd.Timestamp.now(tz="UTC"),
                             reason_source="exception",
                             force=True,
                         )
@@ -264,7 +264,7 @@ class LiveEngine:
         except ValueError:
             self.logger.warning("Skipping bar without price/timestamp.")
             self.iteration += 1
-            return self._last_bar_timestamp or pd.Timestamp.utcnow()
+            return self._last_bar_timestamp or pd.Timestamp.now(tz="UTC")
 
         self._last_bar_timestamp = ts
         ts_float = pd.Timestamp(ts).timestamp()
@@ -310,7 +310,7 @@ class LiveEngine:
 
     def shutdown(self) -> None:
         self.logger.info("Shutting down live engine run_id=%s.", self.run_id)
-        self._write_snapshot(pd.Timestamp.utcnow())
+        self._write_snapshot(pd.Timestamp.now(tz="UTC"))
 
     def pause(self) -> None:
         self.is_paused = True
@@ -343,7 +343,7 @@ class LiveEngine:
                     qty = abs(float(qty))
                     if qty <= 0:
                         continue
-                    ts = getattr(self.execution_client, "_last_timestamp", None) or pd.Timestamp.utcnow()
+                    ts = getattr(self.execution_client, "_last_timestamp", None) or pd.Timestamp.now(tz="UTC")
                     side_raw = str(pos.get("side", "")).upper()
                     side = "SELL" if "LONG" in side_raw else "BUY"
                     client_order_id = self._make_client_order_id(
@@ -365,7 +365,7 @@ class LiveEngine:
                 self.logger.exception("Failed to flatten position: %s", pos)
         self.requested_action = None
         if any_closed:
-            ts_snapshot = self._last_bar_timestamp or pd.Timestamp.utcnow()
+            ts_snapshot = self._last_bar_timestamp or pd.Timestamp.now(tz="UTC")
             self._write_snapshot(ts_snapshot)
             self._refresh_positions()
 
@@ -478,7 +478,7 @@ class LiveEngine:
         self.logger.warning(msg)
         if self.kill_switch:
             try:
-                self.kill_switch.register_exception(dt.datetime.utcnow())
+                self.kill_switch.register_exception(dt.datetime.now(dt.timezone.utc))
             except Exception:
                 self.logger.exception("Failed to register kill-switch exception for limit error.")
         if self.notifier:
@@ -726,7 +726,7 @@ class LiveEngine:
         self._kill_switch_last_eval_iter = self.iteration
         realized = float(self.daily_realized_pnl.get(day_key, 0.0) if day_key is not None else 0.0)
         ks_state = self.kill_switch.evaluate(
-            dt.datetime.utcnow(),
+            dt.datetime.now(dt.timezone.utc),
             equity=equity,
             daily_realized_pnl=realized,
         )

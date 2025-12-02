@@ -49,6 +49,47 @@ exchange:
   max_position_contracts: 0.05
 
 # ============================================================================
+# DATA - Research Data Configuration
+# ============================================================================
+data:
+  symbols: ["AIAUSDT", "BTCUSDT"]
+  timeframes: ["15m", "1h", "4h"]
+  lookback_days:
+    "15m": 90
+    "1h": 180
+    "4h": 365
+  default_lookback_days: 90
+  ohlcv_dir: "data/ohlcv"
+  ohlcv_path_template: "data/ohlcv/{symbol}_{timeframe}.csv"
+
+# ============================================================================
+# RESEARCH - Strategy Search & Scenario Configuration
+# ============================================================================
+research:
+  # Default strategy universe for research operations
+  # These are the strategies that will be available for strategy_search and scenarios
+  default_strategy_universe:
+    - "rule"
+    - "trend_continuation"
+    - "sweep_reversal"
+    - "volatility_breakout"
+
+  # Default timeframes for multi-timeframe research
+  default_timeframes:
+    - "15m"
+    - "1h"
+
+  # Maximum parallel jobs for strategy search (CPU/memory limit)
+  max_parallel_jobs: 4
+
+  # Research output directory
+  output_dir: "outputs/strategy_search"
+
+  # Feature caching (future enhancement - not yet implemented)
+  enable_caching: false
+  cache_dir: "outputs/research_cache"
+
+# ============================================================================
 # BACKTEST - Backtest Motor Ayarları
 # ============================================================================
 backtest:

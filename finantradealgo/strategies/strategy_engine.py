@@ -9,6 +9,7 @@ from finantradealgo.strategies.param_space import ParamSpace
 from finantradealgo.strategies.rule_param_space import RULE_PARAM_SPACE
 from finantradealgo.strategies.sweep_param_space import SWEEP_PARAM_SPACE
 from finantradealgo.strategies.trend_param_space import TREND_PARAM_SPACE
+from finantradealgo.strategies.volatility_param_space import VOLATILITY_PARAM_SPACE
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
 from finantradealgo.strategies.sweep_reversal import (
     SweepReversalConfig,
@@ -33,7 +34,9 @@ class StrategyMeta:
 
     Attributes:
         name: Strategy name (identifier)
+        description: Human-readable description of the strategy
         family: Strategy family (trend, range, microstructure, volatility, rule, ml)
+        status: Development status (experimental, candidate, baseline, live)
         uses_ml: Whether strategy uses ML features
         uses_microstructure: Whether strategy uses microstructure features
         uses_market_structure: Whether strategy uses market structure features
@@ -43,10 +46,12 @@ class StrategyMeta:
         is_searchable: Whether strategy is searchable via strategy_search
     """
     name: str
+    description: str
     family: str  # "trend" | "range" | "microstructure" | "volatility" | "rule" | "ml"
-    uses_ml: bool
-    uses_microstructure: bool
-    uses_market_structure: bool
+    status: str = "experimental"  # "experimental" | "candidate" | "baseline" | "live"
+    uses_ml: bool = False
+    uses_microstructure: bool = False
+    uses_market_structure: bool = False
     default_label_preset: Optional[str] = None
     default_feature_preset: Optional[str] = None
     param_space: Optional[ParamSpace] = None
@@ -102,7 +107,9 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_extract_rule_cfg,
         meta=StrategyMeta(
             name="rule_signals",
+            description="Multi-indicator rule-based strategy with market structure and microstructure filters",
             family="rule",  # Rule-based strategy
+            status="candidate",  # Well-tested, production-ready
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=True,
@@ -118,7 +125,9 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_extract_ml_cfg,
         meta=StrategyMeta(
             name="ml_signals",
+            description="Machine learning strategy using RandomForest with microstructure and market structure features",
             family="ml",  # Machine learning strategy
+            status="experimental",  # Still under development
             uses_ml=True,
             uses_microstructure=True,
             uses_market_structure=True,
@@ -133,7 +142,9 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_default_extractor("trend_continuation"),
         meta=StrategyMeta(
             name="trend_continuation",
+            description="Trend-following strategy with EMA crossovers and regime filters",
             family="trend",  # Trend-following strategy
+            status="candidate",  # Well-tested
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=True,
@@ -149,7 +160,9 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_default_extractor("sweep_reversal"),
         meta=StrategyMeta(
             name="sweep_reversal",
+            description="Liquidity sweep detection with mean reversion entries",
             family="microstructure",  # Microstructure-based strategy
+            status="candidate",  # Well-tested
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=True,
@@ -165,12 +178,15 @@ STRATEGY_SPECS: Dict[str, StrategySpec] = {
         config_extractor=_default_extractor("volatility_breakout"),
         meta=StrategyMeta(
             name="volatility_breakout",
+            description="Range breakout strategy with volatility expansion filters",
             family="volatility",  # Volatility-based strategy
+            status="experimental",  # Needs more testing
             uses_ml=False,
             uses_microstructure=True,
             uses_market_structure=False,
             default_label_preset=None,
             default_feature_preset="extended",
+            param_space=VOLATILITY_PARAM_SPACE,  # Now searchable
         ),
     ),
 }
@@ -252,12 +268,54 @@ def get_searchable_strategies() -> Dict[str, StrategyMeta]:
     }
 
 
+def list_strategies(
+    family: Optional[str] = None,
+    status: Optional[str] = None,
+    searchable_only: bool = False,
+) -> Dict[str, StrategyMeta]:
+    """
+    Query strategies with filters.
+
+    Args:
+        family: Filter by strategy family (trend, range, microstructure, volatility, rule, ml)
+        status: Filter by development status (experimental, candidate, baseline, live)
+        searchable_only: Only return strategies with param_space defined
+
+    Returns:
+        Dictionary mapping strategy name to StrategyMeta for matching strategies
+
+    Examples:
+        >>> # Get all candidate strategies
+        >>> candidates = list_strategies(status="candidate")
+
+        >>> # Get searchable trend strategies
+        >>> searchable_trend = list_strategies(family="trend", searchable_only=True)
+
+        >>> # Get all experimental strategies
+        >>> experimental = list_strategies(status="experimental")
+    """
+    metas = dict(STRATEGY_REGISTRY)
+
+    # Apply filters
+    if family is not None:
+        metas = {k: v for k, v in metas.items() if v.family == family}
+
+    if status is not None:
+        metas = {k: v for k, v in metas.items() if v.status == status}
+
+    if searchable_only:
+        metas = {k: v for k, v in metas.items() if v.is_searchable}
+
+    return metas
+
+
 __all__ = [
     "StrategyMeta",
     "create_strategy",
     "get_strategy_meta",
     "get_strategies_by_family",
     "get_searchable_strategies",
+    "list_strategies",
     "STRATEGY_REGISTRY",
     "STRATEGY_SPECS",
 ]

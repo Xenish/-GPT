@@ -105,14 +105,15 @@ class RuleSignalStrategy(BaseStrategy):
     # ------------------------
     def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
         """
-        entry/exit kolonlarından 'signal' kolonunu üretir.
-        signal = 0/1 (flat/long) olacak şekilde bir state machine uygular.
+        Generates 'long_entry', 'long_exit', 'short_entry', 'short_exit' columns.
+        It uses `entry_col` and `exit_col` if they exist, otherwise assumes no signals.
+        It maintains a state machine for being in a long position.
         """
-
-        if self.config.entry_col not in df.columns or self.config.exit_col not in df.columns:
-            raise ValueError(
-                f"DataFrame'de '{self.config.entry_col}' ve/veya '{self.config.exit_col}' kolonu yok."
-            )
+        # Ensure entry/exit columns exist, default to False if not.
+        if self.config.entry_col not in df.columns:
+            df[self.config.entry_col] = False
+        if self.config.exit_col not in df.columns:
+            df[self.config.exit_col] = False
 
         entry = df[self.config.entry_col].fillna(0).astype(int)
         exit_ = df[self.config.exit_col].fillna(0).astype(int)
@@ -121,18 +122,28 @@ class RuleSignalStrategy(BaseStrategy):
         signals = []
 
         for i, (e, x) in enumerate(zip(entry, exit_)):
-            # Warmup döneminde pozisyon alma
+            # Respect warmup period
             if i < self.config.warmup_bars:
                 position = 0
             else:
                 if position == 0 and e == 1:
-                    position = 1  # long aç
+                    position = 1  # Enter long
                 elif position == 1 and x == 1:
-                    position = 0  # long kapa
+                    position = 0  # Exit long
 
             signals.append(position)
 
         df["signal"] = signals
+
+        # Create the four boolean columns required by the test contract
+        is_long = pd.Series(signals, index=df.index) == 1
+        was_long = is_long.shift(1).fillna(False).infer_objects(copy=False)
+
+        df["long_entry"] = (is_long & ~was_long)
+        df["long_exit"] = (~is_long & was_long)
+        df["short_entry"] = False  # Long-only strategy
+        df["short_exit"] = False   # Long-only strategy
+
         return df
 
     # ------------------------

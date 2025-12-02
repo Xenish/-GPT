@@ -10,8 +10,9 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Dict, Literal, Optional
 import json
+import yaml
 
 
 def create_job_id(
@@ -133,7 +134,89 @@ class StrategySearchJob:
         return cls.from_dict(data)
 
 
+@dataclass
+class StrategySearchJobConfig:
+    """
+    Configuration for strategy search job loaded from YAML.
+
+    This is the user-facing config format for defining search jobs.
+    """
+    job_name: str
+    strategy_name: str
+    symbol: str
+    timeframe: str
+    mode: Literal["random", "grid"] = "random"
+    n_samples: int = 50
+    fixed_params: Optional[Dict[str, Any]] = None
+    search_space_override: Optional[Dict[str, Any]] = None
+    grid_points: Optional[Dict[str, int]] = None  # For grid search
+    random_seed: Optional[int] = None
+    notes: Optional[str] = None
+
+    @classmethod
+    def from_yaml(cls, path: str | Path) -> "StrategySearchJobConfig":
+        """Load job config from YAML file."""
+        with open(path, "r", encoding="utf-8") as f:
+            data = yaml.safe_load(f)
+        return cls(**data)
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "StrategySearchJobConfig":
+        """Create from dictionary."""
+        return cls(
+            job_name=data["job_name"],
+            strategy_name=data["strategy_name"],
+            symbol=data["symbol"],
+            timeframe=data["timeframe"],
+            mode=data.get("mode", "random"),
+            n_samples=int(data.get("n_samples", 50)),
+            fixed_params=data.get("fixed_params"),
+            search_space_override=data.get("search_space_override"),
+            grid_points=data.get("grid_points"),
+            random_seed=data.get("random_seed"),
+            notes=data.get("notes"),
+        )
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Convert to dictionary."""
+        return {
+            "job_name": self.job_name,
+            "strategy_name": self.strategy_name,
+            "symbol": self.symbol,
+            "timeframe": self.timeframe,
+            "mode": self.mode,
+            "n_samples": self.n_samples,
+            "fixed_params": self.fixed_params,
+            "search_space_override": self.search_space_override,
+            "grid_points": self.grid_points,
+            "random_seed": self.random_seed,
+            "notes": self.notes,
+        }
+
+    def to_job(self, config_path: str) -> StrategySearchJob:
+        """Convert to StrategySearchJob for execution."""
+        job_id = create_job_id(
+            self.strategy_name,
+            self.symbol,
+            self.timeframe,
+        )
+        return StrategySearchJob(
+            job_id=job_id,
+            strategy=self.strategy_name,
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            search_type=self.mode,
+            n_samples=self.n_samples,
+            config_path=config_path,
+            created_at=datetime.utcnow(),
+            notes=self.notes,
+            seed=self.random_seed,
+            mode="research",
+        )
+
+
 __all__ = [
     "StrategySearchJob",
+    "StrategySearchJobConfig",
     "create_job_id",
 ]

@@ -26,7 +26,7 @@ class DummyNotifier:
 
 def test_watchdog_warns_for_stale_heartbeat(tmp_path):
     heartbeat_path = Path(tmp_path) / "heartbeat.json"
-    stale_time = dt.datetime.utcnow() - dt.timedelta(seconds=600)
+    stale_time = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=600)
     heartbeat_path.write_text(json.dumps({"run_id": "run123", "updated_at": stale_time.isoformat()}))
     notifier = DummyNotifier()
 

@@ -7,6 +7,8 @@ import { useChartStore } from "@/store/useChartStore";
 import StrategySelector from "@/components/StrategySelector";
 import BacktestSelector from "@/components/BacktestSelector";
 import TradeTable from "@/components/TradeTable";
+import ResearchJobsPanel from "@/components/ResearchJobsPanel";
+import ResearchScenariosPanel from "@/components/ResearchScenariosPanel";
 
 const Chart = dynamic(() => import("@/components/Chart"), { ssr: false });
 
@@ -78,7 +80,8 @@ export default function HomePage() {
     sendLiveCommand,
   } = useChartStore();
 
-  const [activeTab, setActiveTab] = useState<"single" | "portfolio" | "live" | "lab" | "ml">("single");
+  const [activeTab, setActiveTab] = useState<"single" | "portfolio" | "live" | "lab" | "ml" | "research">("single");
+  const [researchSubTab, setResearchSubTab] = useState<"scenarios" | "jobs">("scenarios");
 
   // ML Lab: separate symbol/timeframe selection filtered by ml_targets
   const [mlSymbol, setMlSymbol] = useState<string>("");
@@ -255,6 +258,12 @@ export default function HomePage() {
           onClick={() => setActiveTab("live")}
         >
           Live
+        </button>
+        <button
+          className={`px-2 ${activeTab === "research" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => setActiveTab("research")}
+        >
+          Research
         </button>
       </div>
 
@@ -963,6 +972,36 @@ export default function HomePage() {
               </table>
             </div>
           )}
+        </section>
+      )}
+
+      {activeTab === "research" && (
+        <section className="space-y-4">
+          <div className="flex gap-3 border-b pb-2">
+            <button
+              className={`px-3 py-1 text-sm ${
+                researchSubTab === "scenarios"
+                  ? "font-semibold border-b-2 border-blue-500"
+                  : "text-gray-600"
+              }`}
+              onClick={() => setResearchSubTab("scenarios")}
+            >
+              Scenarios
+            </button>
+            <button
+              className={`px-3 py-1 text-sm ${
+                researchSubTab === "jobs"
+                  ? "font-semibold border-b-2 border-blue-500"
+                  : "text-gray-600"
+              }`}
+              onClick={() => setResearchSubTab("jobs")}
+            >
+              Strategy Search
+            </button>
+          </div>
+
+          {researchSubTab === "scenarios" && <ResearchScenariosPanel />}
+          {researchSubTab === "jobs" && <ResearchJobsPanel />}
         </section>
       )}
     </main>

@@ -7,7 +7,11 @@
       "Bash(if not exist \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\" mkdir \"c:\\Users\\İlker Cem\\TradeProject\\finantradealgo\\validators\")",
       "Bash(cmd /c:*)",
       "Bash(pytest:*)",
-      "Bash(if not exist \"c:\\Users\\İlker Cem\\TradeProject\\docs\\dev\" mkdir \"c:\\Users\\İlker Cem\\TradeProject\\docs\\dev\")"
+      "Bash(if not exist \"c:\\Users\\İlker Cem\\TradeProject\\docs\\dev\" mkdir \"c:\\Users\\İlker Cem\\TradeProject\\docs\\dev\")",
+      "Bash(dir:*)",
+      "Bash(findstr:*)",
+      "Bash(if not exist \"services\\research_service\" mkdir \"services\\research_service\")",
+      "Bash(git add:*)"
     ],
     "deny": [],
     "ask": []

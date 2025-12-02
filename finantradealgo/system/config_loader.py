@@ -354,6 +354,29 @@ class PortfolioConfig:
         )
 
 
+@dataclass
+class ResearchConfig:
+    """Configuration for research mode operations (strategy search, backtesting, scenarios)."""
+    strategy_universe: List[str] = field(default_factory=list)
+    default_timeframes: List[str] = field(default_factory=lambda: ["15m"])
+    max_parallel_jobs: int = 4
+    output_dir: str = "outputs/strategy_search"
+    enable_caching: bool = False
+    cache_dir: str = "outputs/research_cache"
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "ResearchConfig":
+        data = data or {}
+        return cls(
+            strategy_universe=data.get("default_strategy_universe", data.get("strategy_universe", [])),
+            default_timeframes=data.get("default_timeframes", ["15m"]),
+            max_parallel_jobs=int(data.get("max_parallel_jobs", 4)),
+            output_dir=data.get("output_dir", cls.output_dir),
+            enable_caching=bool(data.get("enable_caching", False)),
+            cache_dir=data.get("cache_dir", cls.cache_dir),
+        )
+
+
 DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
     "symbol": "BTCUSDT",
     "timeframe": "15m",
@@ -728,6 +751,7 @@ def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
         default_timeframe=merged.get("timeframe"),
     )
     merged["notifications_cfg"] = NotificationsConfig.from_dict(merged.get("notifications", {}))
+    merged["research_cfg"] = ResearchConfig.from_dict(merged.get("research", {}))
 
     # Create DataConfig and propagate source_timeframe for event bars
     merged["data_cfg"] = DataConfig.from_dict(merged.get("data", {}))
@@ -772,6 +796,7 @@ __all__ = [
     "ReplayConfig",
     "PaperConfig",
     "PortfolioConfig",
+    "ResearchConfig",
     "ExchangeConfig",
     "ExchangeRiskConfig",
     "KillSwitchConfig",

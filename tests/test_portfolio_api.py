@@ -13,7 +13,7 @@ def _write_dummy_portfolio(tmp_base):
     path = out_bt / "portfolio_15m_test_equity.csv"
     df = pd.DataFrame(
         {
-            "time": pd.date_range("2025-01-01", periods=10, freq="H"),
+            "time": pd.date_range("2025-01-01", periods=10, freq="h"),
             "portfolio_equity": np.linspace(1000, 1100, 10),
         }
     )
@@ -22,7 +22,7 @@ def _write_dummy_portfolio(tmp_base):
     trades_dir.mkdir(parents=True, exist_ok=True)
     trades_df = pd.DataFrame(
         {
-            "timestamp": pd.date_range("2025-01-01", periods=2, freq="H"),
+            "timestamp": pd.date_range("2025-01-01", periods=2, freq="h"),
             "symbol": ["AIAUSDT", "BTCUSDT"],
             "pnl": [1.0, -0.5],
         }

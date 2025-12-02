@@ -11,7 +11,12 @@
       "Bash(dir:*)",
       "Bash(findstr:*)",
       "Bash(if not exist \"services\\research_service\" mkdir \"services\\research_service\")",
-      "Bash(git add:*)"
+      "Bash(git add:*)",
+      "Bash(git commit:*)",
+      "Bash(git push:*)",
+      "Bash(git archive:*)",
+      "Bash(npm run lint:*)",
+      "Bash(if exist \".next\" rmdir /s /q \".next\")"
     ],
     "deny": [],
     "ask": []

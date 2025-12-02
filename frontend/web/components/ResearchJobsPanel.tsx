@@ -224,7 +224,7 @@ export default function ResearchJobsPanel() {
           <div className="max-h-96 overflow-auto">
             {jobs.length === 0 && !isLoadingJobs && (
               <div className="px-4 py-8 text-center text-sm text-gray-500">
-                No jobs yet. Click "New Job" to create one.
+                No jobs yet. Click &quot;New Job&quot; to create one.
               </div>
             )}
             {jobs.map((job) => {

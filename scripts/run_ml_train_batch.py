@@ -34,7 +34,7 @@ from finantradealgo.ml.model import (
 )
 from finantradealgo.ml.model_registry import register_model
 from finantradealgo.ml.ml_utils import get_ml_targets, is_ml_enabled
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -168,9 +168,10 @@ def main():
 
     parser = argparse.ArgumentParser(description="Batch ML model training")
     parser.add_argument(
-        "--config",
-        default="config/system.yml",
-        help="Path to system config file",
+        "--profile",
+        choices=["research", "live"],
+        default="research",
+        help="Config profile to load (default: research)",
     )
     args = parser.parse_args()
 
@@ -179,8 +180,8 @@ def main():
         os.environ["FCM_SERVER_KEY"] = "dummy_ml_train_key"
 
     # Load config
-    logger.info(f"Loading config from {args.config}")
-    cfg = load_system_config(args.config)
+    logger.info(f"Loading config profile '{args.profile}'")
+    cfg = load_config(args.profile)
 
     # Check if ML is enabled
     if not is_ml_enabled(cfg):

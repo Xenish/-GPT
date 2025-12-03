@@ -12,13 +12,13 @@ if str(ROOT) not in sys.path:
 import pandas as pd
 
 from finantradealgo.features.feature_pipeline import PIPELINE_VERSION
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from scripts.cli_utils import parse_symbol_timeframe_args, resolve_symbol_timeframe
 from scripts.run_rule_backtest import log_run_header, run_rule_backtest
 
 
 def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
-    sys_cfg = load_system_config()
+    sys_cfg = load_config("research")
     resolved_symbol, resolved_timeframe = resolve_symbol_timeframe(sys_cfg, symbol=symbol, timeframe=timeframe)
     sweep_values = [0.01, 0.02, 0.03, 0.05]
     rows = []

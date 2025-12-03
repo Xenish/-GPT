@@ -17,7 +17,7 @@ from finantradealgo.features.feature_pipeline import (
 )
 from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
 from finantradealgo.ml.model import SklearnLongModel, SklearnModelConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str) -> None:
@@ -28,7 +28,7 @@ def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: s
 
 
 def main() -> None:
-    sys_cfg = load_system_config()
+    sys_cfg = load_config("research")
     symbol = sys_cfg.get("symbol", "BTCUSDT")
     timeframe = sys_cfg.get("timeframe", "15m")
     df_feat, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)

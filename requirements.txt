@@ -12,7 +12,10 @@ pydantic>=2.0
 click>=8.0
 websocket-client
 httpx>=0.27
+psycopg2-binary
 plotly
 pyarrow
 google-generativeai
 python-dotenv
+APScheduler
+prometheus-client

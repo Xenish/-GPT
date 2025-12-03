@@ -2,11 +2,15 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import field
-from typing import Optional
+from typing import Optional, Callable
 
 import pandas as pd
 
 from finantradealgo.core.types import Bar
+from finantradealgo.data_engine.data_backend import build_backend
+from finantradealgo.data_engine.ingestion.ohlcv import timeframe_to_seconds
+from finantradealgo.data_engine.ingestion.state import BaseStateStore
+from finantradealgo.system.config_loader import DataConfig
 
 
 class AbstractLiveDataSource(ABC):
@@ -99,6 +103,112 @@ class FileReplayDataSource(AbstractLiveDataSource):
             symbol=self.symbol,
             timeframe=self.timeframe,
             extras=extras,
+        )
+
+    def close(self) -> None:
+        self._connected = False
+
+
+class DataBackendReplaySource(AbstractLiveDataSource):
+    """
+    Replay/live source that streams bars from a DataBackend (Timescale/DuckDB/CSV).
+    Uses ingestion watermarks to detect staleness/gaps and can trigger backfill via
+    an optional gap_handler callable.
+    """
+
+    def __init__(
+        self,
+        data_cfg: DataConfig,
+        symbol: str,
+        timeframe: str,
+        *,
+        watermark_store: BaseStateStore | None = None,
+        watermark_job: str = "live_poll",
+        lookback_bars: int = 2000,
+        gap_handler: Callable[[str, str, pd.Timestamp, pd.Timestamp], None] | None = None,
+    ) -> None:
+        if not symbol or not timeframe:
+            raise ValueError("symbol and timeframe are required for DataBackendReplaySource")
+        self.data_cfg = data_cfg
+        self.symbol = symbol
+        self.timeframe = timeframe
+        self.watermark_store = watermark_store
+        self.watermark_job = watermark_job
+        self.lookback_bars = lookback_bars
+        self.gap_handler = gap_handler
+        self._df: pd.DataFrame | None = None
+        self._idx = 0
+        self._connected = False
+        self._last_ts: pd.Timestamp | None = None
+        self._step_seconds = timeframe_to_seconds(timeframe)
+
+    def connect(self) -> None:
+        self._reload_data()
+        self._connected = True
+
+    def _reload_data(self) -> None:
+        backend = build_backend(self.data_cfg)
+        end_ts = pd.Timestamp.utcnow().tz_localize("UTC")
+        start_ts = None
+        if self.watermark_store:
+            wm = self.watermark_store.get_watermark(self.watermark_job, f"{self.symbol}:{self.timeframe}")
+            if wm is not None:
+                start_ts = wm - pd.Timedelta(seconds=self.lookback_bars * self._step_seconds)
+        if start_ts is None:
+            start_ts = end_ts - pd.Timedelta(seconds=self.lookback_bars * self._step_seconds)
+        df = backend.load_ohlcv(
+            self.symbol,
+            self.timeframe,
+            start_ts=start_ts,
+            end_ts=end_ts,
+        )
+        df = df.sort_values("timestamp").reset_index(drop=True)
+        self._df = df
+        self._idx = 0
+
+    def _maybe_gap_fill(self, current_ts: pd.Timestamp) -> None:
+        if self._last_ts is None:
+            return
+        expected_next = self._last_ts + pd.Timedelta(seconds=self._step_seconds)
+        if current_ts <= expected_next:
+            return
+        if self.gap_handler:
+            try:
+                self.gap_handler(self.symbol, self.timeframe, expected_next, current_ts)
+                # After backfill, reload data window
+                self._reload_data()
+            except Exception:
+                # Log and continue replaying existing data
+                pass
+
+    def next_bar(self, timeout: Optional[float] = None) -> Optional[Bar]:
+        if not self._connected:
+            self.connect()
+        if self._df is None or self._idx >= len(self._df):
+            self._reload_data()
+            if self._df is None or self._idx >= len(self._df):
+                return None
+        row = self._df.iloc[self._idx]
+        ts = pd.to_datetime(row.get("timestamp"), utc=True)
+        self._maybe_gap_fill(ts)
+        self._last_ts = ts
+        if self.watermark_store and ts is not None:
+            try:
+                self.watermark_store.upsert_watermark(self.watermark_job, f"{self.symbol}:{self.timeframe}", ts)
+            except Exception:
+                pass
+        self._idx += 1
+        return Bar(
+            symbol=self.symbol,
+            timeframe=self.timeframe,
+            open=float(row.get("open", row.get("close"))),
+            high=float(row.get("high", row.get("close"))),
+            low=float(row.get("low", row.get("close"))),
+            close=float(row.get("close")),
+            volume=float(row.get("volume", 0.0)),
+            open_time=ts,
+            close_time=ts,
+            extras=row.to_dict(),
         )
 
     def close(self) -> None:

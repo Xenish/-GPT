@@ -110,7 +110,7 @@ def client(tmp_path, monkeypatch):
     live_dir.mkdir(parents=True, exist_ok=True)
     state_path = live_dir / "live_state.json"
 
-    def fake_load():
+    def fake_load(profile="research"):
         return {
             "live": {
                 "latest_state_path": str(state_path),
@@ -120,7 +120,7 @@ def client(tmp_path, monkeypatch):
         }
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("finantradealgo.api.server.load_system_config", fake_load)
+    monkeypatch.setattr("finantradealgo.api.server.load_config", fake_load)
     return TestClient(create_app()), state_path
 
 
@@ -181,11 +181,11 @@ def test_live_paths_from_config(tmp_path, monkeypatch):
         }
     }
 
-    def fake_load():
+    def fake_load(profile="research"):
         return cfg
 
     monkeypatch.chdir(tmp_path)
-    monkeypatch.setattr("finantradealgo.api.server.load_system_config", fake_load)
+    monkeypatch.setattr("finantradealgo.api.server.load_config", fake_load)
     client = TestClient(create_app())
 
     run_snapshot = {

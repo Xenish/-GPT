@@ -1,14 +1,14 @@
 from __future__ import annotations
 
 from finantradealgo.system.config_loader import (
-    load_system_config,
+    load_config,
     load_exchange_credentials,
 )
 from finantradealgo.execution.exchange_client import BinanceFuturesClient
 
 
 def main() -> None:
-    cfg = load_system_config()
+    cfg = load_config("live")
     exchange_cfg = cfg.get("exchange_cfg")
     if exchange_cfg is None:
         raise RuntimeError("Exchange config not found. Check config/system.yml.")

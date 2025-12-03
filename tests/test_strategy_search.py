@@ -29,8 +29,8 @@ def test_evaluate_strategy_once(monkeypatch):
         fake_run_backtest_once,
     )
     monkeypatch.setattr(
-        "research.strategy_search.search_engine.load_system_config",
-        lambda: {"symbol": "AIAUSDT", "timeframe": "15m"},
+        "research.strategy_search.search_engine.load_config",
+        lambda profile="research": {"symbol": "AIAUSDT", "timeframe": "15m"},
     )
 
     result = evaluate_strategy_once("rule", {"tp_atr_mult": 2.0})
@@ -58,8 +58,8 @@ def test_random_search_uses_param_space(monkeypatch):
         fake_run_backtest_once,
     )
     monkeypatch.setattr(
-        "research.strategy_search.search_engine.load_system_config",
-        lambda: {"symbol": "AIAUSDT", "timeframe": "15m"},
+        "research.strategy_search.search_engine.load_config",
+        lambda profile="research": {"symbol": "AIAUSDT", "timeframe": "15m"},
     )
 
     dummy_space = {"alpha": ParamSpec(name="alpha", type="float", low=0.1, high=0.2)}

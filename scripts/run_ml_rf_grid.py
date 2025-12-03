@@ -12,11 +12,11 @@ from finantradealgo.features.feature_pipeline import (
 )
 from finantradealgo.ml.hyperparameter_search import run_rf_grid_search
 from finantradealgo.ml.labels import build_labels_from_config
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def main() -> None:
-    cfg = load_system_config()
+    cfg = load_config("research")
     symbol = cfg.get("symbol", "AIAUSDT")
     timeframe = cfg.get("timeframe", "15m")
 

@@ -21,7 +21,7 @@ from finantradealgo.features.feature_pipeline import build_feature_pipeline_from
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from tests.utils_ml import prepare_ml_eval_df
 
 GOLDEN_PATH = ROOT / "tests" / "golden" / "regression_rule_ml_15m.json"
@@ -31,7 +31,7 @@ REGRESSION_WINDOW = 1000
 def generate_golden_file():
     """Generate golden file with current backtest results."""
     print("Loading system config...")
-    cfg = load_system_config()
+    cfg = load_config("research")
 
     print("Building feature pipeline...")
     df_full, meta = build_feature_pipeline_from_system_config(cfg)

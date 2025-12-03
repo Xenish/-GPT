@@ -20,7 +20,7 @@ from finantradealgo.ml.model_registry import (
 )
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str, extra: str | None = None) -> None:
@@ -69,7 +69,7 @@ def main() -> None:
     parser.add_argument("--allow-version-mismatch", action="store_true", help="Allow mismatched pipeline versions.")
     args = parser.parse_args()
 
-    sys_cfg = load_system_config()
+    sys_cfg = load_config("research")
     ml_cfg = sys_cfg.get("ml", {})
     model, meta = _load_model(sys_cfg)
 

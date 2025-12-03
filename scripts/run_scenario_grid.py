@@ -8,7 +8,7 @@ from pathlib import Path
 import pandas as pd
 
 from finantradealgo.backtester.scenario_engine import Scenario, run_scenarios
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def main() -> None:
@@ -17,7 +17,7 @@ def main() -> None:
     parser.add_argument("--timeframe", help="Override timeframe from config.")
     args = parser.parse_args()
 
-    cfg = load_system_config()
+    cfg = load_config("research")
     symbol = args.symbol or cfg.get("symbol", "AIAUSDT")
     timeframe = args.timeframe or cfg.get("timeframe", "15m")
 

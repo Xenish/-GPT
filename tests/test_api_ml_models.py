@@ -64,8 +64,8 @@ def test_list_ml_models(tmp_path, monkeypatch):
     base_dir, model_id = _setup_model_dir(tmp_path)
     monkeypatch.setattr(
         server_module,
-        "load_system_config",
-        lambda: {"ml": {"persistence": {"model_dir": str(base_dir)}}},
+        "load_config",
+        lambda profile="research": {"ml": {"persistence": {"model_dir": str(base_dir)}}},
     )
     client = TestClient(create_app())
     resp = client.get("/api/ml/models/AIAUSDT/15m")
@@ -81,8 +81,8 @@ def test_get_feature_importance_returns_meta(tmp_path, monkeypatch):
     base_dir, model_id = _setup_model_dir(tmp_path)
     monkeypatch.setattr(
         server_module,
-        "load_system_config",
-        lambda: {"ml": {"persistence": {"model_dir": str(base_dir)}}},
+        "load_config",
+        lambda profile="research": {"ml": {"persistence": {"model_dir": str(base_dir)}}},
     )
     client = TestClient(create_app())
     resp = client.get(f"/api/ml/models/{model_id}/importance")

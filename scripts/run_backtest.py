@@ -14,22 +14,22 @@ from finantradealgo.features.base_features import FeatureConfig, add_basic_featu
 from finantradealgo.core.report import ReportConfig, generate_report
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ema_cross import EMACrossStrategy
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run backtest with EMA Cross strategy")
     parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Path to config file (default: from FT_CONFIG_PATH env or config/system.yml)"
+        "--profile",
+        choices=["research", "live"],
+        default="research",
+        help="Config profile to load (default: research)",
     )
     args = parser.parse_args()
 
     # Load config with profile support
-    sys_cfg = load_system_config(path=args.config)
+    sys_cfg = load_config(args.profile)
 
     # SAFETY: Assert research mode for backtest
     cfg_mode = sys_cfg.get("mode", "unknown")

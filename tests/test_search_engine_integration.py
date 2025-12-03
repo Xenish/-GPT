@@ -11,13 +11,13 @@ from finantradealgo.research.strategy_search.search_engine import (
     evaluate_strategy_once,
 )
 from finantradealgo.research.strategy_search.jobs import StrategySearchJob, create_job_id
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 @pytest.fixture
 def research_config():
     """Load research config."""
-    return load_system_config("config/system.research.yml")
+    return load_config("research")
 
 
 def test_evaluate_strategy_once_with_default_params(research_config):

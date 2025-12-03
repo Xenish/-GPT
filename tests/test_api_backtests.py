@@ -6,7 +6,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from finantradealgo.api.server import create_app
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 @pytest.fixture
@@ -51,16 +51,16 @@ def test_run_backtest_rule_ok(client: TestClient):
 
 
 def test_run_backtest_ml_without_model(monkeypatch, tmp_path):
-    cfg = deepcopy(load_system_config())
+    cfg = deepcopy(load_config("research"))
     ml_cfg = cfg.get("ml", {})
     ml_cfg.setdefault("persistence", {})
     ml_cfg["persistence"]["model_dir"] = str(tmp_path / "models_empty")
     cfg["ml"] = ml_cfg
 
-    def _fake_load():
+    def _fake_load(profile="research"):
         return cfg
 
-    monkeypatch.setattr("finantradealgo.api.server.load_system_config", _fake_load)
+    monkeypatch.setattr("finantradealgo.api.server.load_config", _fake_load)
     app = create_app()
     client = TestClient(app)
 

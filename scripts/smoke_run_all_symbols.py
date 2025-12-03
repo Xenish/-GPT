@@ -19,7 +19,7 @@ from typing import Dict, List, Tuple
 
 import pandas as pd
 
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from finantradealgo.validation import (
     validate_ohlcv,
     OHLCVValidationConfig,
@@ -240,10 +240,11 @@ def main():
 
     # Load configuration
     try:
-        config = load_system_config()
-        symbols = config.data.symbols
-        timeframes = config.data.timeframes
-        data_dir = Path(config.data.ohlcv_dir)
+        config = load_config("research")
+        data_cfg = config["data_cfg"]
+        symbols = data_cfg.symbols
+        timeframes = data_cfg.timeframes
+        data_dir = Path(data_cfg.ohlcv_dir)
     except Exception as e:
         logger.error(f"Failed to load configuration: {e}")
         sys.exit(1)

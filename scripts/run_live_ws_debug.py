@@ -4,7 +4,7 @@ import argparse
 import sys
 from typing import List
 
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from finantradealgo.data_engine.binance_ws_source import BinanceWsDataSource
 
 
@@ -29,7 +29,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    cfg = load_system_config()
+    cfg = load_config("live")
     live_cfg = cfg.get("live", {}) or {}
 
     default_symbol = None

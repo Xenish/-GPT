@@ -10,11 +10,11 @@ from finantradealgo.strategies.trend_continuation import (
     TrendContinuationConfig,
     TrendContinuationStrategy,
 )
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def test_create_strategy_rule_returns_expected_class():
-    cfg = load_system_config()
+    cfg = load_config("research")
     strategy = create_strategy("rule", cfg)
     from finantradealgo.strategies.rule_signals import RuleSignalStrategy
 
@@ -22,7 +22,7 @@ def test_create_strategy_rule_returns_expected_class():
 
 
 def test_create_strategy_invalid_name():
-    cfg = load_system_config()
+    cfg = load_config("research")
     with pytest.raises(ValueError):
         create_strategy("does_not_exist", cfg)
 

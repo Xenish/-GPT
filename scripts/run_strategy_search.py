@@ -39,7 +39,7 @@ if str(_project_root) not in sys.path:
 from finantradealgo.research.strategy_search.jobs import StrategySearchJob, create_job_id
 from finantradealgo.research.strategy_search.search_engine import run_random_search
 from finantradealgo.strategies.strategy_engine import get_strategy_meta, get_searchable_strategies
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def parse_args():
@@ -51,10 +51,10 @@ def parse_args():
     )
 
     parser.add_argument(
-        "--config",
-        type=str,
-        default="config/system.research.yml",
-        help="Path to system config (default: config/system.research.yml)",
+        "--profile",
+        choices=["research", "live"],
+        default="research",
+        help="Config profile to load (default: research)",
     )
 
     parser.add_argument(
@@ -153,7 +153,7 @@ def main():
 
     # Load system config
     print(f"Loading config: {args.config}")
-    sys_cfg = load_system_config(path=args.config)
+    sys_cfg = load_config(args.profile)
 
     # Validate mode
     cfg_mode = sys_cfg.get("mode", "unknown")

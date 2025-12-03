@@ -20,7 +20,7 @@ from finantradealgo.monitoring import (
     instrument_fastapi_app,
     trace_span,
 )
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from finantradealgo.system.config_validation import validate_research_config
 from services.research_service.router import research_router
 from services.research_service.concurrency import initialize_job_limiter
@@ -58,7 +58,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     print("=" * 60)
 
     try:
-        cfg = load_system_config()
+        cfg = load_config("research")
         validate_research_config(cfg)
 
         # Initialize job limiter

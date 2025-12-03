@@ -13,7 +13,7 @@ from pydantic import BaseModel
 from copy import deepcopy
 
 from finantradealgo.features.feature_pipeline import PIPELINE_VERSION
-from finantradealgo.system.config_loader import load_system_config, PortfolioConfig, DataConfig
+from finantradealgo.system.config_loader import load_config, PortfolioConfig, DataConfig
 from finantradealgo.backtester.scenario_engine import run_scenario_preset
 from finantradealgo.ml.model_registry import load_registry, validate_registry_entry
 from finantradealgo.ml.ml_utils import get_ml_targets
@@ -199,25 +199,55 @@ class LiveControlRequest(BaseModel):
     command: str  # "pause", "resume", "stop", "flatten"
     run_id: Optional[str] = None
 
-def _find_feature_file(symbol: str, timeframe: str) -> Path:
+def _load_features(symbol: str, timeframe: str, cfg: dict) -> pd.DataFrame:
     root = Path(__file__).resolve().parents[2]
+    data_cfg = cfg.get("data_cfg")
+    features_dir = Path(getattr(data_cfg, "features_dir", "data/features"))
     candidates = [
+        features_dir / f"{symbol}_{timeframe}_features.parquet",
+        features_dir / f"{symbol}_{timeframe}_features.csv",
+        root / "data" / "features" / f"{symbol}_{timeframe}_features.parquet",
         root / "data" / "features" / f"{symbol}_{timeframe}_features.csv",
-        root / "data" / "features" / f"{symbol}_features_{timeframe}.csv",
     ]
     for path in candidates:
         if path.exists():
-            return path
-    raise FileNotFoundError(
-        f"Feature CSV not found for {symbol} {timeframe}. Tried: {candidates}"
-    )
+            if path.suffix == ".parquet":
+                df = pd.read_parquet(path)
+            else:
+                df = pd.read_csv(path)
+            break
+    else:
+        # Try duckdb feature store if available
+        duck_candidates = [
+            features_dir / "features.duckdb",
+            root / "data" / "features.duckdb",
+        ]
+        for duck_path in duck_candidates:
+            if duck_path.exists():
+                try:
+                    import duckdb  # type: ignore
+                except Exception as exc:
+                    raise FileNotFoundError(
+                        f"Feature data not found as Parquet/CSV; duckdb present but import failed: {exc}"
+                    )
+                con = duckdb.connect(str(duck_path), read_only=True)
+                table = f"features_{timeframe}"
+                df = con.execute(
+                    f"SELECT * FROM {table} WHERE symbol = ? ORDER BY timestamp ASC",
+                    [symbol],
+                ).fetch_df()
+                con.close()
+                if df.empty:
+                    continue
+                break
+        else:
+            raise FileNotFoundError(
+                f"Feature data not found for {symbol} {timeframe}. "
+                f"Looked in {features_dir} for parquet/csv and features.duckdb."
+            )
 
-
-def _read_feature_csv(symbol: str, timeframe: str) -> pd.DataFrame:
-    fea_path = _find_feature_file(symbol, timeframe)
-    df = pd.read_csv(fea_path)
     if "timestamp" not in df.columns:
-        raise ValueError("Feature CSV must include 'timestamp' column")
+        raise ValueError("Feature data must include 'timestamp' column")
     df["timestamp"] = pd.to_datetime(df["timestamp"])
     return df
 
@@ -236,7 +266,7 @@ def create_app() -> FastAPI:
         allow_headers=["*"],
     )
 
-    cfg = load_system_config()
+    cfg = load_config("research")
     ml_proba_col = (
         cfg.get("ml", {}).get("backtest", {}).get("proba_column", "ml_proba_long")
     )
@@ -341,7 +371,7 @@ def create_app() -> FastAPI:
         run_id: Optional[str] = Query(default=None),
     ) -> ChartResponse:
         try:
-            df = _read_feature_csv(symbol, timeframe)
+            df = _load_features(symbol, timeframe, cfg)
         except FileNotFoundError as exc:
             raise HTTPException(status_code=404, detail=str(exc))
         except Exception as exc:
@@ -554,7 +584,7 @@ def create_app() -> FastAPI:
         """
         Frontend'teki 'Run backtest' butonu buraya POST atıyor.
         """
-        cfg = load_system_config()
+        cfg = load_config("research")
 
         # Validate symbol and timeframe against configured values
         data_cfg = cfg.get("data_cfg")
@@ -610,7 +640,7 @@ def create_app() -> FastAPI:
         Returns multi-timeframe configuration with per-timeframe lookback days
         for data filtering and resource management.
         """
-        cfg = load_system_config()
+        cfg = load_config("research")
 
         # Get data configuration with multi-TF support
         data_cfg = cfg.get("data_cfg")
@@ -649,7 +679,7 @@ def create_app() -> FastAPI:
 
     @app.post("/api/scenarios/run", response_model=ScenarioRunResponse)
     def run_scenarios(req: ScenarioRunRequest):
-        cfg = load_system_config()
+        cfg = load_config("research")
         cfg_local = deepcopy(cfg)
         cfg_local["symbol"] = req.symbol
         cfg_local["timeframe"] = req.timeframe
@@ -730,7 +760,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/ml/models/{model_id}/importance")
     def get_feature_importance(model_id: str) -> Dict[str, float]:
-        cfg_local = load_system_config()
+        cfg_local = load_config("research")
         ml_cfg = cfg_local.get("ml", {}) or {}
         persistence_cfg = ml_cfg.get("persistence", {}) or {}
         base_dir = Path(persistence_cfg.get("model_dir", "outputs/ml_models"))
@@ -766,7 +796,7 @@ def create_app() -> FastAPI:
 
     @app.get("/api/ml/models/{symbol}/{timeframe}", response_model=List[ModelInfo])
     def list_ml_models(symbol: str, timeframe: str) -> List[ModelInfo]:
-        cfg_local = load_system_config()
+        cfg_local = load_config("research")
         ml_cfg = cfg_local.get("ml", {}) or {}
         persistence_cfg = ml_cfg.get("persistence", {}) or {}
         base_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
@@ -883,7 +913,7 @@ def create_app() -> FastAPI:
         if req.command not in valid:
             raise HTTPException(status_code=400, detail="Invalid live command")
 
-        cfg = load_system_config()
+        cfg = load_config("research")
         live_cfg = cfg.get("live", {}) or {}
         state_path = Path(
             live_cfg.get(

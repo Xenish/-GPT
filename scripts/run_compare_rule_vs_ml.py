@@ -16,7 +16,7 @@ from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
 )
 from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from scripts.run_ml_backtest import run_ml_backtest
 from scripts.run_rule_backtest import run_rule_backtest
 
@@ -37,7 +37,7 @@ def main() -> None:
     parser.add_argument("--allow-version-mismatch", action="store_true", help="Allow pipeline version mismatches.")
     args = parser.parse_args()
 
-    sys_cfg = load_system_config()
+    sys_cfg = load_config("research")
     cfg_eval = copy.deepcopy(sys_cfg)
 
     ml_cfg = cfg_eval.get("ml", {})

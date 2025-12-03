@@ -32,7 +32,7 @@ if str(ROOT) not in sys.path:
 from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
 )
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 logging.basicConfig(
     level=logging.INFO,
@@ -143,9 +143,10 @@ def main():
         help="Output directory (default: from system.yml features_dir)",
     )
     parser.add_argument(
-        "--config",
-        default="config/system.yml",
-        help="Path to system config file",
+        "--profile",
+        choices=["research", "live"],
+        default="research",
+        help="Config profile to load (default: research)",
     )
     args = parser.parse_args()
 
@@ -154,8 +155,8 @@ def main():
         os.environ["FCM_SERVER_KEY"] = "dummy_batch_key"
 
     # Load system config
-    logger.info(f"Loading config from {args.config}")
-    cfg = load_system_config(args.config)
+    logger.info(f"Loading config profile '{args.profile}'")
+    cfg = load_config(args.profile)
     data_cfg = cfg["data_cfg"]
 
     # Get symbols and timeframes

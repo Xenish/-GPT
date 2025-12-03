@@ -6,15 +6,18 @@ from typing import Dict, Tuple, Optional
 import pandas as pd
 
 from finantradealgo.core.strategy import BaseStrategy
-from finantradealgo.data_engine.live_data_source import AbstractLiveDataSource, FileReplayDataSource
+from finantradealgo.data_engine.live_data_source import AbstractLiveDataSource, FileReplayDataSource, DataBackendReplaySource
 from finantradealgo.data_engine.binance_ws_source import BinanceWsDataSource
+from finantradealgo.data_engine.ingestion.ohlcv import BinanceRESTCandleSource, HistoricalOHLCVIngestor
+from finantradealgo.data_engine.ingestion.state import init_state_store, BaseStateStore
+from finantradealgo.data_engine.ingestion.writer import TimescaleWarehouse
 from finantradealgo.execution.execution_client import create_execution_client
 from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
 from finantradealgo.live_trading.live_engine import LiveEngine
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import LiveConfig, KillSwitchConfig, NotificationsConfig
+from finantradealgo.system.config_loader import LiveConfig, KillSwitchConfig, NotificationsConfig, WarehouseConfig, load_exchange_credentials
 from finantradealgo.system.kill_switch import KillSwitch
 from finantradealgo.system.notifications import create_notification_manager
 
@@ -44,6 +47,44 @@ def create_data_source(
             bars_limit=live_cfg.replay.bars_limit,
             start_index=live_cfg.replay.start_index,
             start_timestamp=live_cfg.replay.start_timestamp,
+        )
+    if source in {"replay_db", "db", "backend", "parquet", "duckdb"}:
+        data_cfg = cfg.get("data_cfg")
+        wh_cfg: WarehouseConfig = cfg.get("warehouse_cfg")
+        state_store = init_state_store(wh_cfg.dsn if wh_cfg else None) if wh_cfg else None
+
+        gap_handler = None
+        # Only try automatic backfill if we have Timescale + exchange creds
+        if data_cfg.backend in {"timescale", "postgres"} and wh_cfg and wh_cfg.dsn:
+            try:
+                api_key, secret = load_exchange_credentials(cfg["exchange_cfg"])
+                warehouse = TimescaleWarehouse(
+                    wh_cfg.dsn,
+                    table_map={
+                        "ohlcv": wh_cfg.ohlcv_table,
+                        "funding": wh_cfg.funding_table,
+                        "open_interest": wh_cfg.open_interest_table,
+                        "flow": wh_cfg.flow_table,
+                        "sentiment": wh_cfg.sentiment_table,
+                    },
+                    batch_size=wh_cfg.live_batch_size,
+                )
+                rest_source = BinanceRESTCandleSource(cfg["exchange_cfg"], api_key=api_key, secret=secret)
+                ingestor = HistoricalOHLCVIngestor(rest_source, warehouse)
+
+                def _gap_handler(symbol: str, timeframe: str, start_ts, end_ts):
+                    ingestor.backfill_range(symbol, timeframe, start_ts, end_ts)
+
+                gap_handler = _gap_handler
+            except Exception:
+                gap_handler = None
+
+        return DataBackendReplaySource(
+            data_cfg=data_cfg,
+            symbol=live_cfg.symbol,
+            timeframe=live_cfg.timeframe,
+            watermark_store=state_store,
+            gap_handler=gap_handler,
         )
     if source == "binance_ws":
         symbols = live_cfg.symbols or [live_cfg.symbol]

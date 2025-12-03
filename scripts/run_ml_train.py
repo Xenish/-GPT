@@ -19,7 +19,7 @@ from finantradealgo.ml.model import (
     save_sklearn_model,
 )
 from finantradealgo.ml.model_registry import register_model
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 import pandas as pd
 
 
@@ -38,7 +38,7 @@ def main(
     timeframe: Optional[str] = None,
     preset: Optional[str] = None,
 ) -> None:
-    sys_cfg = load_system_config()
+    sys_cfg = load_config("research")
     cfg = dict(sys_cfg)
     if symbol:
         cfg["symbol"] = symbol

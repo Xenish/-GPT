@@ -35,7 +35,7 @@ from finantradealgo.features.rule_signals import RuleSignalConfig, add_rule_sign
 from finantradealgo.features.ta_features import TAFeatureConfig, add_ta_features
 from finantradealgo.features.flow_features import add_flow_features
 from finantradealgo.features.sentiment_features import add_sentiment_features
-from finantradealgo.system.config_loader import load_system_config, DataConfig
+from finantradealgo.system.config_loader import load_config, DataConfig
 from finantradealgo.validation import DataValidationConfig, validate_ohlcv
 
 PIPELINE_VERSION = "v1.0.0"
@@ -340,12 +340,13 @@ def build_feature_pipeline_from_system_config(
     *,
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
+    df_ohlcv_override: Optional[pd.DataFrame] = None,
 ) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """
     Convenience helper that wires system.yml -> FeaturePipelineConfig and
     resolves CSV paths for OHLCV + external data.
     """
-    cfg = sys_cfg or load_system_config()
+    cfg = sys_cfg or load_config("research")
     feature_section = cfg.get("features", {})
 
     rule_section = cfg.get("rule", {})
@@ -401,11 +402,20 @@ def build_feature_pipeline_from_system_config(
     data_cfg = DataConfig.from_dict(data_section)
 
     # Load OHLCV data using new loader (with automatic lookback filtering)
-    logger.info(
-        f"Loading OHLCV data for {resolved_symbol} {resolved_timeframe} "
-        f"(lookback: {data_cfg.lookback_days.get(resolved_timeframe, data_cfg.default_lookback_days)} days)"
-    )
-    df_ohlcv = load_ohlcv_for_symbol_tf(resolved_symbol, resolved_timeframe, data_cfg)
+    if df_ohlcv_override is not None:
+        df_ohlcv = df_ohlcv_override
+        logger.info(
+            "Using preloaded OHLCV override for %s %s (%s rows)",
+            resolved_symbol,
+            resolved_timeframe,
+            len(df_ohlcv),
+        )
+    else:
+        logger.info(
+            f"Loading OHLCV data for {resolved_symbol} {resolved_timeframe} "
+            f"(lookback: {data_cfg.lookback_days.get(resolved_timeframe, data_cfg.default_lookback_days)} days)"
+        )
+        df_ohlcv = load_ohlcv_for_symbol_tf(resolved_symbol, resolved_timeframe, data_cfg)
 
     # Construct paths for external data
     external_dir = Path(data_section.get("external_dir", "data/external"))

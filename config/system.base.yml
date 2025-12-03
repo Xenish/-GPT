@@ -20,6 +20,8 @@ data:
   features_dir: "data/features"
   flow_dir: "data/flow"
   sentiment_dir: "data/sentiment"
+  backend: "csv"  # csv | timescale | duckdb
+  backend_params: {}
 
   # Research universe - geniş sembol ve timeframe seti
   symbols:
@@ -210,3 +212,16 @@ portfolio:
   capital_allocation:
     type: "equal_weight"
     weights: {}
+
+# ========================================================================
+# WAREHOUSE / STATE
+# ========================================================================
+warehouse:
+  backend: timescale
+  dsn: ${FT_TIMESCALE_DSN}
+  ohlcv_table: raw_ohlcv
+  funding_table: raw_funding_rates
+  open_interest_table: raw_open_interest
+  flow_table: raw_flow
+  sentiment_table: raw_sentiment
+  live_batch_size: 500

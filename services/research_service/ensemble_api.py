@@ -110,11 +110,11 @@ async def run_ensemble_backtest(request: RunEnsembleRequest):
         BanditAlgorithm,
     )
     from finantradealgo.research.ensemble.base import ComponentStrategy
-    from finantradealgo.system.config_loader import load_system_config
+    from finantradealgo.system.config_loader import load_config
 
     # Load system config
     try:
-        sys_cfg = load_system_config()
+        sys_cfg = load_config("research")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Config load failed: {str(e)}")
 

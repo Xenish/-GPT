@@ -4,8 +4,18 @@ from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, List, Literal
+import logging
 import os
 import yaml
+
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+PROFILE_PATHS: Dict[str, Path] = {
+    "research": BASE_DIR / "config/system.research.yml",
+    "live": BASE_DIR / "config/system.live.yml",
+}
+
+ProfileName = Literal["research", "live"]
 
 # Lazy import for market_structure to avoid circular dependencies
 def _load_market_structure_config():
@@ -78,12 +88,21 @@ class DataConfig:
     timeframes: List[str] = field(default_factory=list)
     lookback_days: Dict[str, int] = field(default_factory=dict)
     default_lookback_days: int = 365
+    backend: str = "csv"  # csv | timescale | duckdb
+    backend_params: Dict[str, Any] = field(default_factory=dict)
     bars: EventBarConfig = field(default_factory=EventBarConfig)
 
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "DataConfig":
         data = data or {}
         bars_cfg = EventBarConfig.from_dict(data.get("bars"))
+        backend_params = data.get("backend_params", {}) or {}
+        if isinstance(backend_params, dict) and "dsn" in backend_params:
+            try:
+                backend_params["dsn"] = resolve_env_placeholders(backend_params["dsn"])
+            except RuntimeError:
+                # Defer errors to runtime if env is missing
+                pass
         return cls(
             ohlcv_dir=data.get("ohlcv_dir", cls.ohlcv_dir),
             external_dir=data.get("external_dir", cls.external_dir),
@@ -96,7 +115,48 @@ class DataConfig:
             timeframes=data.get("timeframes", []),
             lookback_days=data.get("lookback_days", {}),
             default_lookback_days=data.get("default_lookback_days", cls.default_lookback_days),
+            backend=data.get("backend", cls.backend),
+            backend_params=backend_params,
             bars=bars_cfg,
+        )
+
+
+@dataclass
+class WarehouseConfig:
+    """Time-series warehouse configuration (Timescale/DuckDB)."""
+
+    backend: str = "timescale"
+    dsn: Optional[str] = None
+    ohlcv_table: str = "raw_ohlcv"
+    funding_table: str = "raw_funding_rates"
+    open_interest_table: str = "raw_open_interest"
+    flow_table: str = "raw_flow"
+    sentiment_table: str = "raw_sentiment"
+    live_batch_size: int = 500
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "WarehouseConfig":
+        data = data or {}
+        raw_dsn = data.get("dsn")
+        dsn: Optional[str] = None
+        if raw_dsn:
+            try:
+                dsn = resolve_env_placeholders(raw_dsn)
+            except RuntimeError as exc:
+                logging.warning(
+                    "Warehouse DSN env not set, using raw value; %s",
+                    exc,
+                )
+                dsn = raw_dsn
+        return cls(
+            backend=data.get("backend", cls.backend),
+            dsn=dsn,
+            ohlcv_table=data.get("ohlcv_table", cls.ohlcv_table),
+            funding_table=data.get("funding_table", cls.funding_table),
+            open_interest_table=data.get("open_interest_table", cls.open_interest_table),
+            flow_table=data.get("flow_table", cls.flow_table),
+            sentiment_table=data.get("sentiment_table", cls.sentiment_table),
+            live_batch_size=int(data.get("live_batch_size", cls.live_batch_size)),
         )
 
 
@@ -412,6 +472,18 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
         "flow_dir": "data/flow",
         "sentiment_dir": "data/sentiment",
         "base_dir": "data",
+        "backend": "csv",
+        "backend_params": {},
+    },
+    "warehouse": {
+        "backend": "timescale",
+        "dsn": None,
+        "ohlcv_table": "raw_ohlcv",
+        "funding_table": "raw_funding_rates",
+        "open_interest_table": "raw_open_interest",
+        "flow_table": "raw_flow",
+        "sentiment_table": "raw_sentiment",
+        "live_batch_size": 500,
     },
     "features": {
         "use_base": True,
@@ -675,7 +747,7 @@ def _propagate_source_timeframe(data_cfg: DataConfig, global_timeframe: str) -> 
     return data_cfg
 
 
-def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
+def load_system_config(path: str | Path) -> Dict[str, Any]:
     """
     Load the project-level system configuration with profile support.
 
@@ -683,8 +755,7 @@ def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
     system.base.yml if it exists.
 
     Args:
-        path: Config file path. If None, reads from FT_CONFIG_PATH env var,
-              defaults to "config/system.yml"
+        path: Config file path (required)
 
     Returns:
         Merged config dictionary with all required fields
@@ -692,9 +763,8 @@ def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
     Raises:
         FileNotFoundError: If config file doesn't exist
     """
-    # Determine config path from parameter or environment
     if path is None:
-        path = os.getenv("FT_CONFIG_PATH", "config/system.yml")
+        raise ValueError("Config path must be provided. Use load_config(profile) for profiles.")
 
     cfg_path = Path(path)
     if not cfg_path.exists():
@@ -759,6 +829,7 @@ def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
         merged["data_cfg"],
         merged.get("timeframe", "15m")
     )
+    merged["warehouse_cfg"] = WarehouseConfig.from_dict(merged.get("warehouse", {}))
 
     # Load market_structure and microstructure configs
     MarketStructureConfig = _load_market_structure_config()
@@ -767,6 +838,14 @@ def load_system_config(path: str | Path | None = None) -> Dict[str, Any]:
     merged["microstructure_cfg"] = MicrostructureConfig.from_dict(merged.get("microstructure", {}))
 
     return merged
+
+
+def load_config(profile: ProfileName) -> Dict[str, Any]:
+    try:
+        path = PROFILE_PATHS[profile]
+    except KeyError:
+        raise ValueError(f"Unknown profile: {profile!r}")
+    return load_system_config(path=path)
 
 
 def load_exchange_credentials(cfg: ExchangeConfig) -> tuple[str, str]:
@@ -790,6 +869,7 @@ def load_exchange_credentials(cfg: ExchangeConfig) -> tuple[str, str]:
 
 __all__ = [
     "load_system_config",
+    "load_config",
     "DataConfig",
     "EventBarConfig",
     "LiveConfig",
@@ -797,6 +877,7 @@ __all__ = [
     "PaperConfig",
     "PortfolioConfig",
     "ResearchConfig",
+    "WarehouseConfig",
     "ExchangeConfig",
     "ExchangeRiskConfig",
     "KillSwitchConfig",

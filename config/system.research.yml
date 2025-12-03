@@ -54,6 +54,8 @@ exchange:
 data:
   symbols: ["AIAUSDT", "BTCUSDT"]
   timeframes: ["15m", "1h", "4h"]
+  backend: "csv"
+  backend_params: {}
   lookback_days:
     "15m": 90
     "1h": 180

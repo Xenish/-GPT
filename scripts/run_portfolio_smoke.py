@@ -15,11 +15,11 @@ from finantradealgo.backtester.portfolio_engine import PortfolioBacktestEngine
 from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.strategy_engine import create_strategy
-from finantradealgo.system.config_loader import PortfolioConfig, load_system_config
+from finantradealgo.system.config_loader import PortfolioConfig, load_config
 
 
 def main() -> None:
-    cfg = load_system_config()
+    cfg = load_config("research")
     portfolio_cfg = PortfolioConfig.from_dict(cfg.get("portfolio", {}))
 
     engines = {}

@@ -16,7 +16,7 @@ from finantradealgo.features.feature_pipeline import build_feature_pipeline_from
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from tests.utils_ml import prepare_ml_eval_df
 
 GOLDEN_PATH = Path(__file__).parent / "golden" / "regression_rule_ml_15m.json"
@@ -45,7 +45,7 @@ def _compare_relative(actual: float, expected: float, tol: float) -> None:
 
 @pytest.mark.slow
 def test_regression_backtests_against_golden():
-    cfg = load_system_config()
+    cfg = load_config("research")
     df_full, meta = build_feature_pipeline_from_system_config(cfg)
     df_window = df_full.tail(REGRESSION_WINDOW).reset_index(drop=True)
 

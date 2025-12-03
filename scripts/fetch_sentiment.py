@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 
 from finantradealgo.data_engine.loader import load_ohlcv_csv
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def build_sentiment_dataframe(
@@ -39,12 +39,12 @@ def main(args: Optional[list[str]] = None) -> None:
     parser.add_argument("--timeframe", help="Override timeframe (default from config).")
     parsed = parser.parse_args(args=args)
 
-    cfg = load_system_config()
+    cfg = load_config("research")
     symbol = parsed.symbol or cfg.get("symbol", "BTCUSDT")
     timeframe = parsed.timeframe or cfg.get("timeframe", "15m")
-    data_cfg = cfg.get("data", {}) or {}
-    ohlcv_dir = Path(data_cfg.get("ohlcv_dir", "data/ohlcv"))
-    sentiment_dir = Path(data_cfg.get("sentiment_dir", "data/sentiment"))
+    data_cfg = cfg["data_cfg"]
+    ohlcv_dir = Path(data_cfg.ohlcv_dir)
+    sentiment_dir = Path(data_cfg.sentiment_dir)
 
     df = build_sentiment_dataframe(symbol, timeframe, ohlcv_dir=ohlcv_dir)
     sentiment_dir.mkdir(parents=True, exist_ok=True)

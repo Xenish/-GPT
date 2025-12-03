@@ -63,7 +63,7 @@ live:
   symbol: "AIAUSDT"  # Single symbol for live trading
   timeframe: "15m"    # Single timeframe for live trading
 
-  data_source: "replay"  # "replay" | "binance_ws"
+  data_source: "replay_db"  # "replay_db" | "replay" | "binance_ws"
   exchange: "binance_futures"
   ws_enabled: false      # Paper'da websocket kapalı, replay kullan
   rest_poll_sec: 5
@@ -139,6 +139,19 @@ logging:
   format: "structured"  # structured JSON logging for live
   output_dir: "outputs/live_logs"
   save_results: true
+
+# ========================================================================
+# WAREHOUSE override for live (optional, inherits system.base.yml)
+# ========================================================================
+warehouse:
+  backend: timescale
+  dsn: ${FT_TIMESCALE_DSN}
+  ohlcv_table: raw_ohlcv
+  funding_table: raw_funding_rates
+  open_interest_table: raw_open_interest
+  flow_table: raw_flow
+  sentiment_table: raw_sentiment
+  live_batch_size: 500
 
 # ============================================================================
 # Live'da KULLANILMAYAN bloklar (opsiyonel, minimal tutulabilir)

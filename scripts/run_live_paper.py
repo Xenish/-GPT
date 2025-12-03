@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from finantradealgo.live_trading.factories import create_live_engine
-from finantradealgo.system.config_loader import LiveConfig, load_system_config
+from finantradealgo.system.config_loader import LiveConfig, load_config, load_system_config
 from finantradealgo.system.logger import init_logger
 
 
@@ -20,9 +20,9 @@ def build_run_id(symbol: str, timeframe: str) -> str:
     return f"{symbol}_{timeframe}_{ts}"
 
 
-def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, config_path: Optional[str] = None) -> None:
+def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, config_path: Optional[str] = None, profile: str = "live") -> None:
     # Load config with profile support
-    cfg = load_system_config(path=config_path)
+    cfg = load_system_config(path=config_path) if config_path else load_config(profile)
 
     # SAFETY: Assert live/paper mode for live trading
     cfg_mode = cfg.get("mode", "unknown")
@@ -86,10 +86,17 @@ if __name__ == "__main__":
         "--config",
         type=str,
         default=None,
-        help="Path to config file (default: from FT_CONFIG_PATH env or config/system.yml)"
+        help="Explicit config path (overrides profile selection)",
+    )
+    parser.add_argument(
+        "--profile",
+        choices=["live", "research"],
+        default="live",
+        help="Config profile to load when --config is not provided",
     )
     parser.add_argument("--symbol", type=str, default=None, help="Override symbol")
     parser.add_argument("--timeframe", type=str, default=None, help="Override timeframe")
     args = parser.parse_args()
 
-    main(symbol=args.symbol, timeframe=args.timeframe, config_path=args.config)
+    config_path = args.config or None
+    main(symbol=args.symbol, timeframe=args.timeframe, config_path=args.config, profile=args.profile)

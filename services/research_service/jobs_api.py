@@ -65,7 +65,7 @@ async def create_strategy_search_job(request: StrategySearchJobRequest):
     from datetime import datetime
     from finantradealgo.research.strategy_search.jobs import StrategySearchJob, create_job_id
     from finantradealgo.research.strategy_search.search_engine import run_random_search
-    from finantradealgo.system.config_loader import load_system_config
+    from finantradealgo.system.config_loader import load_config
     from services.research_service.concurrency import get_job_limiter
 
     # Get job limiter
@@ -83,7 +83,7 @@ async def create_strategy_search_job(request: StrategySearchJobRequest):
 
     # Load system config
     try:
-        sys_cfg = load_system_config()
+        sys_cfg = load_config("research")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Config load failed: {str(e)}")
 

@@ -8,7 +8,7 @@ import numpy as np
 import pandas as pd
 
 from finantradealgo.data_engine.loader import load_ohlcv_csv
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def _load_funding(symbol: str, timeframe: str, external_dir: Path) -> pd.DataFrame:
@@ -66,13 +66,13 @@ def main(args: Optional[list[str]] = None) -> None:
     parser.add_argument("--timeframe", help="Timeframe override, defaults to config value (15m).")
     parsed = parser.parse_args(args=args)
 
-    cfg = load_system_config()
+    cfg = load_config("research")
     symbol = parsed.symbol or cfg.get("symbol", "BTCUSDT")
     timeframe = parsed.timeframe or cfg.get("timeframe", "15m")
-    data_cfg = cfg.get("data", {}) or {}
-    ohlcv_dir = Path(data_cfg.get("ohlcv_dir", "data/ohlcv"))
-    external_dir = Path(data_cfg.get("external_dir", "data/external"))
-    flow_dir = Path(data_cfg.get("flow_dir", "data/flow"))
+    data_cfg = cfg["data_cfg"]
+    ohlcv_dir = Path(data_cfg.ohlcv_dir)
+    external_dir = Path(data_cfg.external_dir)
+    flow_dir = Path(data_cfg.flow_dir)
 
     path = build_flow_dataframe(
         symbol,

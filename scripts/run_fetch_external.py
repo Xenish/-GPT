@@ -13,26 +13,16 @@ from typing import List
 import pandas as pd
 import requests
 
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
-SYS_CFG = load_system_config()
-DATA_CFG = SYS_CFG.get("data", {})
+SYS_CFG = load_config("research")
+DATA_CFG = SYS_CFG["data_cfg"]
 SYMBOL = SYS_CFG.get("symbol", "BTCUSDT")
 TIMEFRAME = SYS_CFG.get("timeframe", "15m")
-OHLCV_CSV = (
-    Path(DATA_CFG.get("ohlcv_dir", "data/ohlcv")) / f"{SYMBOL}_{TIMEFRAME}.csv"
-)
+OHLCV_CSV = Path(DATA_CFG.ohlcv_dir) / f"{SYMBOL}_{TIMEFRAME}.csv"
 
-FUNDING_OUT_CSV = (
-    Path(DATA_CFG.get("external_dir", "data/external"))
-    / "funding"
-    / f"{SYMBOL}_funding_{TIMEFRAME}.csv"
-)
-OI_OUT_CSV = (
-    Path(DATA_CFG.get("external_dir", "data/external"))
-    / "open_interest"
-    / f"{SYMBOL}_oi_{TIMEFRAME}.csv"
-)
+FUNDING_OUT_CSV = Path(DATA_CFG.external_dir) / "funding" / f"{SYMBOL}_funding_{TIMEFRAME}.csv"
+OI_OUT_CSV = Path(DATA_CFG.external_dir) / "open_interest" / f"{SYMBOL}_oi_{TIMEFRAME}.csv"
 
 
 def _load_time_range_from_ohlcv() -> tuple[int, int]:

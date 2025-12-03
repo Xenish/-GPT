@@ -156,3 +156,15 @@ Kapsamlı Türkçe dokümantasyon için:
 - Bu depo araştırma ve prototipleme amaçlıdır; **production trading riski size aittir.**
 - Binance / diğer veri kaynakları için rate limit / API key / mevzuat sorumluluğu size aittir.
 - Gönderilen CLI (`finantrade ...`) tüm temel script'leri tek çatı altında toplar.
+
+## Veri Deposu / Backend Se?imi
+- Varsay?lan CSV: data.backend: csv, yollar data/ohlcv/{symbol}_{timeframe}.csv.
+- Timescale/Postgres: data.backend: timescale, data.backend_params.dsn:  (Alembic 0002/0003 migration).
+- DuckDB/Parquet: data.backend: duckdb, data.backend_params.database: data/catalog.duckdb.
+- Live/paper i?in live.data_source: replay_db depodan replay; WS i?in inance_ws.
+
+## Ingestion / Feature Build / Monitoring
+- Tarihsel/catch-up ingest: python scripts/ingest_marketdata.py historical --symbols BTCUSDT --timeframes 1m --lookback-days 30
+- Scheduler (cron + Prometheus metrics :9200): python scripts/schedule_ingestion.py --config config/system.live.yml
+- Incremental feature build: python scripts/run_feature_builder.py incremental --symbols BTCUSDT --timeframes 15m --dsn 
+- Status API (FastAPI): uvicorn scripts.status_api:app --port 8001 (watermark/runs endpoints)

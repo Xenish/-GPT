@@ -8,7 +8,7 @@ from finantradealgo.features.feature_pipeline import (
 )
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def build_small_feature_df(window: int = 300):
@@ -16,7 +16,7 @@ def build_small_feature_df(window: int = 300):
     Helper that mirrors the production feature builder but trims
     the result so integration tests remain fast.
     """
-    cfg = load_system_config()
+    cfg = load_config("research")
     df, meta = build_feature_pipeline_from_system_config(cfg)
     df_small = df.tail(window).reset_index(drop=True)
     return df_small, meta, cfg

@@ -31,7 +31,7 @@ from finantradealgo.ml.model_registry import (
 )
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str, extra: str | None = None) -> None:
@@ -50,7 +50,7 @@ def run_ml_backtest(
     pipeline_meta: Optional[Dict[str, Any]] = None,
     split_ratio: float = 0.7,
 ) -> Tuple[dict, pd.DataFrame, Dict[str, Any]]:
-    sys_cfg = sys_cfg or load_system_config()
+    sys_cfg = sys_cfg or load_config("research")
 
     if df is None or pipeline_meta is None:
         df, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
@@ -237,7 +237,7 @@ def _ensure_output_dirs() -> tuple[Path, Path]:
 
 
 def main() -> None:
-    sys_cfg = load_system_config()
+    sys_cfg = load_config("research")
     df, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
     report, df_eval, aux = run_ml_backtest(
         sys_cfg=sys_cfg,

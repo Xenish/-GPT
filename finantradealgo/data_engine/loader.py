@@ -8,6 +8,7 @@ from typing import Dict, List, Optional, Sequence, Tuple
 import pandas as pd
 
 from finantradealgo.data_engine.event_bars import build_event_bars
+from finantradealgo.data_engine.data_backend import build_backend
 from finantradealgo.system.config_loader import EventBarConfig, DataConfig
 
 logger = logging.getLogger(__name__)
@@ -109,6 +110,9 @@ def load_ohlcv_for_symbol_tf(
     symbol: str,
     timeframe: str,
     data_cfg: DataConfig,
+    *,
+    start_ts: pd.Timestamp | str | None = None,
+    end_ts: pd.Timestamp | str | None = None,
 ) -> pd.DataFrame:
     """
     Load OHLCV data for a specific symbol and timeframe using DataConfig.
@@ -127,21 +131,42 @@ def load_ohlcv_for_symbol_tf(
         DataFrame with OHLCV data (filtered and processed)
 
     Example:
-        >>> from finantradealgo.system.config_loader import load_system_config
-        >>> cfg = load_system_config()
+        >>> from finantradealgo.system.config_loader import load_config
+        >>> cfg = load_config("research")
         >>> df = load_ohlcv_for_symbol_tf("BTCUSDT", "15m", cfg["data_cfg"])
     """
-    # Resolve file path from template
-    path = data_cfg.ohlcv_path_template.format(symbol=symbol, timeframe=timeframe)
-
-    # Get lookback days for this timeframe
     lookback = data_cfg.lookback_days.get(timeframe, data_cfg.default_lookback_days)
-
+    backend = build_backend(data_cfg)
     logger.info(
-        f"Loading {symbol} {timeframe} from {path} (lookback: {lookback} days)"
+        "Loading %s %s using backend=%s (lookback=%s)",
+        symbol,
+        timeframe,
+        getattr(data_cfg, "backend", "csv"),
+        lookback,
     )
-
-    return load_ohlcv_csv(path, config=data_cfg, lookback_days=lookback)
+    df = backend.load_ohlcv(
+        symbol,
+        timeframe,
+        lookback_days=lookback,
+        start_ts=pd.to_datetime(start_ts, utc=True) if start_ts is not None else None,
+        end_ts=pd.to_datetime(end_ts, utc=True) if end_ts is not None else None,
+    )
+    # Apply event bars if configured
+    if data_cfg and hasattr(data_cfg, 'bars') and data_cfg.bars:
+        if data_cfg.bars.mode in ("volume", "dollar", "tick"):
+            if data_cfg.bars.source_timeframe is None:
+                logger.warning(
+                    "Event bars: source_timeframe not specified. "
+                    "It's recommended to set timeframe='1m' in your config when using event bars."
+                )
+            elif data_cfg.bars.source_timeframe != "1m":
+                raise ValueError(
+                    f"Event bars currently only supported from 1m data; "
+                    f"got source_timeframe={data_cfg.bars.source_timeframe!r}. "
+                    f"Set timeframe='1m' in your config when using event bars."
+                )
+        df = build_event_bars(df, data_cfg.bars)
+    return df
 
 
 def _load_timeseries_csv(path: Path) -> pd.DataFrame:
@@ -267,6 +292,10 @@ def load_flow_features(
     base_dir: str | Path = "data",
     data_cfg: Optional[DataConfig] = None,
 ) -> Optional[pd.DataFrame]:
+    if data_cfg and getattr(data_cfg, "backend", "csv") != "csv":
+        backend = build_backend(data_cfg)
+        db_df = backend.load_flow(symbol, timeframe)
+        return _prepare_flow_df(db_df, f"backend:{data_cfg.backend}") if db_df is not None else None
     base_path = Path(flow_dir) if flow_dir else Path(base_dir) / "flow"
     # Try combined files first
     for pattern in FLOW_COMBINED_FILENAMES:
@@ -324,6 +353,10 @@ def load_sentiment_features(
     base_dir: str | Path = "data",
     data_cfg: Optional[DataConfig] = None,
 ) -> Optional[pd.DataFrame]:
+    if data_cfg and getattr(data_cfg, "backend", "csv") != "csv":
+        backend = build_backend(data_cfg)
+        db_df = backend.load_sentiment(symbol, timeframe)
+        return _prepare_sentiment_df(db_df, f"backend:{data_cfg.backend}") if db_df is not None else None
     base_path = Path(sentiment_dir) if sentiment_dir else Path(base_dir) / "sentiment"
     for pattern in SENTIMENT_COMBINED_FILENAMES:
         path = base_path / pattern.format(symbol=symbol, timeframe=timeframe)

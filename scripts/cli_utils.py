@@ -3,7 +3,7 @@ from __future__ import annotations
 import argparse
 from typing import Any, Dict, Optional, Tuple
 
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def add_symbol_timeframe_args(parser: argparse.ArgumentParser) -> argparse.ArgumentParser:
@@ -23,7 +23,7 @@ def load_config_with_overrides(
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
 ) -> Dict[str, Any]:
-    cfg = load_system_config()
+    cfg = load_config("research")
     cfg_local = dict(cfg)
     if symbol:
         cfg_local["symbol"] = symbol

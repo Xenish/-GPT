@@ -15,7 +15,7 @@ from typing import Dict, List, Optional, Tuple
 
 import pandas as pd
 
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from finantradealgo.validation import (
     validate_ohlcv,
     detect_gaps,
@@ -255,12 +255,13 @@ def main():
     )
 
     # Load configuration
-    config = load_system_config()
+    config = load_config("research")
 
     # Get symbols and timeframes
-    symbols = args.symbols if args.symbols else config.data.symbols
-    timeframes = args.timeframes if args.timeframes else config.data.timeframes
-    data_dir = args.data_dir if args.data_dir else Path(config.data.ohlcv_dir)
+    data_cfg = config["data_cfg"]
+    symbols = args.symbols if args.symbols else data_cfg.symbols
+    timeframes = args.timeframes if args.timeframes else data_cfg.timeframes
+    data_dir = args.data_dir if args.data_dir else Path(data_cfg.ohlcv_dir)
 
     logger.info(f"Analyzing {len(symbols)} symbols x {len(timeframes)} timeframes")
 

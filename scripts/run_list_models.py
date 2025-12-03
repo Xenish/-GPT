@@ -9,7 +9,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from finantradealgo.ml.model_registry import load_registry, validate_registry_entry
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def main() -> None:
@@ -21,7 +21,7 @@ def main() -> None:
     parser.add_argument("--only-model-type", help="Filter by model type, e.g., RandomForest.")
     args = parser.parse_args()
 
-    cfg = load_system_config()
+    cfg = load_config("research")
     ml_cfg = cfg.get("ml", {})
     persistence_cfg = ml_cfg.get("persistence", {})
     default_model_dir = persistence_cfg.get("model_dir", "outputs/ml_models")

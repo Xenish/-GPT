@@ -8,13 +8,13 @@ from finantradealgo.features.feature_pipeline import build_feature_pipeline_from
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from tests.utils_ml import prepare_ml_eval_df
 
 
 @pytest.mark.slow
 def test_rule_vs_ml_integration_pipeline():
-    cfg = load_system_config()
+    cfg = load_config("research")
     df_all, meta = build_feature_pipeline_from_system_config(cfg)
     df_all = df_all.reset_index(drop=True)
 

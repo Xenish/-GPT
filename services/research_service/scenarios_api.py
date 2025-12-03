@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
 from finantradealgo.backtester.scenario_engine import Scenario, run_scenarios
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 router = APIRouter()
 
@@ -73,7 +73,7 @@ async def run_scenarios_endpoint(request: RunScenariosRequest):
 
     # Load system config
     try:
-        sys_cfg = load_system_config()
+        sys_cfg = load_config("research")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Config load failed: {str(e)}")
 

@@ -18,7 +18,7 @@ from finantradealgo.features.feature_pipeline import (
 from finantradealgo.core.report import ReportConfig, generate_report
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 from scripts.cli_utils import (
     apply_symbol_timeframe_overrides,
     parse_symbol_timeframe_args,
@@ -43,7 +43,7 @@ def run_rule_backtest(
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
 ) -> tuple[dict, pd.DataFrame, dict]:
-    sys_cfg = sys_cfg or load_system_config()
+    sys_cfg = sys_cfg or load_config("research")
     cfg_local = apply_symbol_timeframe_overrides(sys_cfg, symbol=symbol, timeframe=timeframe)
     resolved_symbol, resolved_timeframe = resolve_symbol_timeframe(cfg_local, symbol=symbol, timeframe=timeframe)
 

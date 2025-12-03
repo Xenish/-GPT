@@ -8,7 +8,7 @@ from finantradealgo.backtester.scenario_engine import (
     ScenarioEngine,
     run_scenarios,
 )
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def _build_dummy_df() -> pd.DataFrame:
@@ -39,7 +39,7 @@ def _build_dummy_df() -> pd.DataFrame:
 
 
 def test_run_scenarios_returns_dataframe():
-    cfg = load_system_config()
+    cfg = load_config("research")
     df = _build_dummy_df()
     engine = ScenarioEngine(cfg)
 
@@ -64,7 +64,7 @@ def test_run_scenarios_returns_dataframe():
 
 
 def test_run_scenarios_produces_rows():
-    cfg = load_system_config()
+    cfg = load_config("research")
     scenarios = [
         Scenario(
             symbol="AIAUSDT",

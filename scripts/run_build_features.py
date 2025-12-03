@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
 from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
 )
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def log_run_header(symbol: str, timeframe: str, preset: str, pipeline_version: str) -> None:
@@ -25,14 +25,14 @@ def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
     import time
 
     start_time = time.time()
-    sys_cfg = load_system_config()
+    sys_cfg = load_config("research")
     cfg = dict(sys_cfg)
     if symbol:
         cfg["symbol"] = symbol
     if timeframe:
         cfg["timeframe"] = timeframe
 
-    data_cfg = cfg.get("data", {}) or {}
+    data_cfg = cfg["data_cfg"]
     resolved_symbol = cfg.get("symbol", "BTCUSDT")
     resolved_timeframe = cfg.get("timeframe", "15m")
 
@@ -54,7 +54,7 @@ def main(symbol: Optional[str] = None, timeframe: Optional[str] = None) -> None:
     print("[INFO] Last 5 rows:")
     print(df_feat.tail())
 
-    features_dir = Path(data_cfg.get("features_dir", "data/features"))
+    features_dir = Path(data_cfg.features_dir)
     out_path = features_dir / f"{resolved_symbol}_features_{resolved_timeframe}.csv"
     out_path.parent.mkdir(parents=True, exist_ok=True)
     df_feat.to_csv(out_path, index=False)

@@ -14,7 +14,7 @@ from finantradealgo.strategies.param_space import (
     sample_params,
 )
 from finantradealgo.strategies.strategy_engine import get_strategy_meta
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 # Import StrategySearchJob from sibling module
 import sys
@@ -50,7 +50,7 @@ def evaluate_strategy_once(
     """
     Run a single backtest evaluation for the given strategy/params pair.
     """
-    base_cfg = sys_cfg or load_system_config()
+    base_cfg = sys_cfg or load_config("research")
     cfg_with_params = apply_strategy_params_to_cfg(base_cfg, strategy_name, params or {})
     symbol = cfg_with_params.get("symbol", base_cfg.get("symbol"))
     timeframe = cfg_with_params.get("timeframe", base_cfg.get("timeframe"))
@@ -107,7 +107,7 @@ def random_search(
         random.seed(random_seed)
         np.random.seed(random_seed)
 
-    cfg = sys_cfg or load_system_config()
+    cfg = sys_cfg or load_config("research")
     space = param_space or getattr(get_strategy_meta(strategy_name), "param_space", None)
     if not space:
         raise ValueError(f"Strategy '{strategy_name}' has no ParamSpace defined.")
@@ -165,7 +165,7 @@ def grid_search(
     import numpy as np
     from itertools import product
 
-    cfg = sys_cfg or load_system_config()
+    cfg = sys_cfg or load_config("research")
     space = param_space or getattr(get_strategy_meta(strategy_name), "param_space", None)
     if not space:
         raise ValueError(f"Strategy '{strategy_name}' has no ParamSpace defined.")

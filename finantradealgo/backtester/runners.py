@@ -16,7 +16,7 @@ from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.strategy_engine import create_strategy
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def _generate_run_id(strategy: str, symbol: str, timeframe: str) -> str:
@@ -103,7 +103,7 @@ def run_backtest_once(
     cfg: Optional[Dict[str, Any]] = None,
     strategy_params: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
-    cfg = cfg or load_system_config()
+    cfg = cfg or load_config("research")
     cfg_local = deepcopy(cfg)
     if strategy_params:
         strategy_cfg = cfg_local.setdefault("strategy", {}).setdefault(strategy_name, {})

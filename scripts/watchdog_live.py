@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Callable, Optional
 
-from finantradealgo.system.config_loader import LiveConfig, load_system_config
+from finantradealgo.system.config_loader import LiveConfig, load_config
 from finantradealgo.system.notifications import create_notification_manager
 from finantradealgo.system.notifier import Notifier
 
@@ -102,7 +102,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = parse_args()
-    cfg = load_system_config()
+    cfg = load_config("live")
     live_cfg: LiveConfig = cfg.get("live_cfg")
     notifier = (
         create_notification_manager(cfg.get("notifications_cfg"))

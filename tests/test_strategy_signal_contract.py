@@ -13,7 +13,7 @@ from finantradealgo.strategies.strategy_engine import (
     create_strategy,
     get_searchable_strategies,
 )
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 @pytest.fixture
@@ -33,7 +33,7 @@ def dummy_ohlcv():
 @pytest.fixture
 def base_config():
     """Load base system config."""
-    return load_system_config("config/system.research.yml")
+    return load_config("research")
 
 
 def test_searchable_strategies_have_signal_columns(dummy_ohlcv, base_config):

@@ -9,9 +9,9 @@
 #   FT_CONFIG_PATH=config/system.research.yml python -m finantradealgo.api.server
 
 # ============================================================================
-# MODE - KRITIK: Bu profil sadece research için
+# PROFILE - KRITIK: Bu profil sadece research için
 # ============================================================================
-mode: "research"
+profile: "research"
 
 # ============================================================================
 # EXCHANGE - Mock/Backtest Exchange
@@ -44,7 +44,7 @@ exchange:
   # Backtest'te leverage/position limitler sembolik
   default_leverage: 5
   position_mode: "one_way"
-  max_leverage: 3
+  max_leverage: 5
   max_position_notional: 200.0
   max_position_contracts: 0.05
 
@@ -52,15 +52,33 @@ exchange:
 # DATA - Research Data Configuration
 # ============================================================================
 data:
-  symbols: ["AIAUSDT", "BTCUSDT"]
-  timeframes: ["15m", "1h", "4h"]
+  symbols:
+    - "AIAUSDT"
+    - "BTCUSDT"
+    - "ETHUSDT"
+    
+    - "BNBUSDT"
+    - "XRPUSDT"
+
+
+  timeframes:
+    - "1m"
+    - "5m"
+    - "15m"
+    - "1h"
+    - "4h"
+
+  lookback_days:
+    "1m": 90
+    "5m": 90
+    "15m": 180
+    "1h": 365
+    "4h": 365
+
+  default_lookback_days: 365
+
   backend: "csv"
   backend_params: {}
-  lookback_days:
-    "15m": 90
-    "1h": 180
-    "4h": 365
-  default_lookback_days: 90
   ohlcv_dir: "data/ohlcv"
   ohlcv_path_template: "data/ohlcv/{symbol}_{timeframe}.csv"
 

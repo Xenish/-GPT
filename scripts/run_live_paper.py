@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from finantradealgo.live_trading.factories import create_live_engine
-from finantradealgo.system.config_loader import LiveConfig, load_config, load_system_config
+from finantradealgo.system.config_loader import LiveConfig, load_config
 from finantradealgo.system.logger import init_logger
 
 
@@ -22,7 +22,11 @@ def build_run_id(symbol: str, timeframe: str) -> str:
 
 def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, config_path: Optional[str] = None, profile: str = "live") -> None:
     # Load config with profile support
-    cfg = load_system_config(path=config_path) if config_path else load_config(profile)
+    if config_path:
+        raise RuntimeError(
+            "Explicit config path is no longer supported. Use load_config(profile=...) with system.live.yml."
+        )
+    cfg = load_config(profile)
 
     # SAFETY: Assert live/paper mode for live trading
     cfg_mode = cfg.get("mode", "unknown")

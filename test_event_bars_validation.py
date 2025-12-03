@@ -17,7 +17,7 @@ import pytest
 if not os.getenv("FCM_SERVER_KEY"):
     os.environ["FCM_SERVER_KEY"] = "dummy_test_key"
 
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import DataConfig, _propagate_source_timeframe
 
 
 def test_invalid_timeframe_config():
@@ -26,16 +26,9 @@ def test_invalid_timeframe_config():
         "timeframe": "15m",
         "data": {"bars": {"mode": "volume", "target_volume": 2000000}},
     }
-    test_path = Path("config/test_invalid.yml")
-    with open(test_path, "w") as f:
-        yaml.dump(test_config, f)
-
-    try:
-        with pytest.raises(ValueError, match="currently only supported from 1m data"):
-            load_system_config(str(test_path))
-    finally:
-        if test_path.exists():
-            test_path.unlink()
+    data_cfg = DataConfig.from_dict(test_config["data"])
+    with pytest.raises(ValueError, match="currently only supported from 1m data"):
+        _propagate_source_timeframe(data_cfg, test_config["timeframe"])
 
 
 def test_valid_timeframe_config():
@@ -44,17 +37,9 @@ def test_valid_timeframe_config():
         "timeframe": "1m",
         "data": {"bars": {"mode": "volume", "target_volume": 2000000}},
     }
-    test_path = Path("config/test_valid.yml")
-    with open(test_path, "w") as f:
-        yaml.dump(test_config, f)
-
-    try:
-        cfg = load_system_config(str(test_path))
-        data_cfg = cfg.get("data_cfg")
-        assert data_cfg.bars.source_timeframe == "1m"
-    finally:
-        if test_path.exists():
-            test_path.unlink()
+    data_cfg = DataConfig.from_dict(test_config["data"])
+    data_cfg = _propagate_source_timeframe(data_cfg, test_config["timeframe"])
+    assert data_cfg.bars.source_timeframe == "1m"
 
 
 def test_explicit_1m_override():
@@ -69,17 +54,9 @@ def test_explicit_1m_override():
             }
         },
     }
-    test_path = Path("config/test_override.yml")
-    with open(test_path, "w") as f:
-        yaml.dump(test_config, f)
-
-    try:
-        cfg = load_system_config(str(test_path))
-        data_cfg = cfg.get("data_cfg")
-        assert data_cfg.bars.source_timeframe == "1m"
-    finally:
-        if test_path.exists():
-            test_path.unlink()
+    data_cfg = DataConfig.from_dict(test_config["data"])
+    data_cfg = _propagate_source_timeframe(data_cfg, test_config["timeframe"])
+    assert data_cfg.bars.source_timeframe == "1m"
 
 
 if __name__ == "__main__":

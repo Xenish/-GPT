@@ -8,7 +8,6 @@ from typing import Optional, Protocol, Sequence
 import pandas as pd
 
 from finantradealgo.core.types import Bar
-from finantradealgo.data_engine.binance_ws_source import BinanceWsDataSource
 from finantradealgo.data_engine.ingestion.models import IngestCandle, ensure_timestamp
 from finantradealgo.data_engine.ingestion.writer import TimescaleWarehouse
 from finantradealgo.execution.exchange_client import BinanceFuturesClient
@@ -41,6 +40,12 @@ class CandleSource(Protocol):
         limit: Optional[int] = None,
     ) -> Sequence[IngestCandle]:
         ...
+
+
+class WsBarSource(Protocol):
+    def connect(self) -> None: ...
+    def next_bar(self, timeout: float | None = None) -> Optional[Bar]: ...
+    def close(self) -> None: ...
 
 
 class BinanceRESTCandleSource:
@@ -197,7 +202,7 @@ class LiveOHLCVIngestor:
 
     def __init__(
         self,
-        ws_source: BinanceWsDataSource,
+        ws_source: WsBarSource,
         rest_source: CandleSource,
         warehouse: TimescaleWarehouse,
         live_cfg: LiveConfig,

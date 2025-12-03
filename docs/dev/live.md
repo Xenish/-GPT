@@ -1,7 +1,7 @@
 # Live / Paper Trading Guide
 
 ## Configure
-- Update `config/system.yml` → `live` block. Key options:
+- Update `config/system.live.yml` → `live` block. Key options:
   - `mode`: `"replay"`, `"paper"`, or `"live"` (currently replay/paper supported).
   - `symbol`, `timeframe`, `exchange`, `log_level`, `log_dir`.
   - `replay`: `bars_limit`, `start_index`, `start_timestamp` for slicing the feature DataFrame.

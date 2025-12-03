@@ -41,7 +41,7 @@
   - `registry_index.csv` zaman damgası sayesinde hangi retrain’in üretimde olduğunu izlemek kolaydır.
 
 ## 5. Live Entegrasyonu
-- Live config (`config/system.yml`):
+- Live config (`config/system.live.yml`):
   - `ml.production_model`: `"auto"` veya belirli `model_id`.
 - `MLSignalStrategy` davranışı:
   - `auto` → `ModelRegistry` içinden seçilen symbol/timeframe için en güncel `production` model’i çek.

@@ -37,7 +37,6 @@ from finantradealgo.system.config_loader import (
     WarehouseConfig,
     load_config,
     load_exchange_credentials,
-    load_system_config,
 )
 
 logger = logging.getLogger(__name__)
@@ -66,8 +65,7 @@ def _resolve_timeframes(cfg: dict, cli_timeframes: Iterable[str] | None) -> list
 
 def _build_wh_and_sources(cfg: dict):
     wh_cfg: WarehouseConfig = cfg["warehouse_cfg"]
-    if not wh_cfg.dsn:
-        raise RuntimeError("warehouse.dsn is required (set in config or env).")
+    dsn = wh_cfg.get_dsn()
     table_map = {
         "ohlcv": wh_cfg.ohlcv_table,
         "funding": wh_cfg.funding_table,
@@ -75,7 +73,7 @@ def _build_wh_and_sources(cfg: dict):
         "flow": wh_cfg.flow_table,
         "sentiment": wh_cfg.sentiment_table,
     }
-    warehouse = TimescaleWarehouse(wh_cfg.dsn, table_map=table_map, batch_size=wh_cfg.live_batch_size)
+    warehouse = TimescaleWarehouse(dsn, table_map=table_map, batch_size=wh_cfg.live_batch_size)
     exch_cfg = cfg["exchange_cfg"]
     api_key, secret = load_exchange_credentials(exch_cfg)
     rest_source = BinanceRESTCandleSource(exch_cfg, api_key=api_key, secret=secret)
@@ -192,10 +190,14 @@ def archive_cleanup_job(state) -> None:
 @click.option("--run-once", is_flag=True, help="Run each job once and exit (no scheduler loop).")
 def main(profile: str, config: str | None, symbols, timeframes, run_once: bool):
     os.environ.setdefault("FCM_SERVER_KEY", "dummy_scheduler_key")
-    cfg = load_system_config(config) if config else load_config(profile)
+    if config:
+        raise RuntimeError(
+            "Explicit config path is no longer supported. Use load_config(profile=...) with system.research.yml or system.live.yml."
+        )
+    cfg = load_config(profile)
     wh_cfg: WarehouseConfig = cfg["warehouse_cfg"]
     warehouse, rest_source = _build_wh_and_sources(cfg)
-    state = init_state_store(wh_cfg.dsn)
+    state = init_state_store(wh_cfg.get_dsn())
     ingestor = HistoricalOHLCVIngestor(rest_source, warehouse)
 
     symbols_list = _resolve_symbols(cfg, symbols)

@@ -51,15 +51,16 @@ def create_data_source(
     if source in {"replay_db", "db", "backend", "parquet", "duckdb"}:
         data_cfg = cfg.get("data_cfg")
         wh_cfg: WarehouseConfig = cfg.get("warehouse_cfg")
-        state_store = init_state_store(wh_cfg.dsn if wh_cfg else None) if wh_cfg else None
+        dsn = wh_cfg.get_dsn() if wh_cfg else None
+        state_store = init_state_store(dsn) if dsn else None
 
         gap_handler = None
         # Only try automatic backfill if we have Timescale + exchange creds
-        if data_cfg.backend in {"timescale", "postgres"} and wh_cfg and wh_cfg.dsn:
+        if data_cfg.backend in {"timescale", "postgres"} and wh_cfg:
             try:
                 api_key, secret = load_exchange_credentials(cfg["exchange_cfg"])
                 warehouse = TimescaleWarehouse(
-                    wh_cfg.dsn,
+                    wh_cfg.get_dsn(),
                     table_map={
                         "ohlcv": wh_cfg.ohlcv_table,
                         "funding": wh_cfg.funding_table,

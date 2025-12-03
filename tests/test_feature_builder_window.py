@@ -1,11 +1,11 @@
 import pandas as pd
 
 from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 def test_feature_pipeline_accepts_preloaded_ohlcv(monkeypatch, tmp_path):
-    cfg = load_system_config("config/system.yml")
+    cfg = load_config("research")
     # make tiny ohlcv df
     ts = pd.date_range("2024-01-01", periods=5, freq="1H", tz="UTC")
     df = pd.DataFrame(

@@ -138,7 +138,7 @@ From `MicrostructureSignals.columns()`:
 
 ## Configuration
 
-### In `config/system.yml`
+### In `config/system.research.yml` / `config/system.live.yml`
 
 ```yaml
 microstructure:

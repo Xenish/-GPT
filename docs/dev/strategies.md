@@ -42,5 +42,5 @@ scenario:
 ## Adding A New Strategy
 1. Create `<NewStrategy>Config` + `<NewStrategy>Strategy` that inherit `BaseStrategy`.
 2. Add the pair to `finantradealgo/strategies/strategy_engine.py` registry (with `StrategyMeta`).
-3. Wire any YAML defaults under `strategy.<name>` in `config/system.yml`.
+3. Wire any YAML defaults under `strategy.<name>` in `config/system.research.yml` / `config/system.live.yml`.
 4. (Optional) Append entries to `scenario.presets` for quick experimentation & mention the strategy in this doc.

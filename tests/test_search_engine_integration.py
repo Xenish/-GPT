@@ -102,7 +102,7 @@ def test_strategy_search_job_serialization():
         timeframe="15m",
         search_type="random",
         n_samples=50,
-        config_path="config/system.research.yml",
+        profile="research",
         created_at=datetime.now(UTC),
         seed=42,
         notes="Test job",
@@ -112,6 +112,8 @@ def test_strategy_search_job_serialization():
     job_dict = job.to_dict()
     assert job_dict["job_id"] == "test_job_123"
     assert job_dict["seed"] == 42
+    assert job_dict["profile"] == "research"
+    assert "config_path" not in job_dict
 
     # Deserialize
     job_restored = StrategySearchJob.from_dict(job_dict)

@@ -15,15 +15,23 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+import yaml
 
 from finantradealgo.features.feature_pipeline import (
     build_feature_pipeline_from_system_config,
 )
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import DataConfig
 
 
 class TestFeaturePipelineMultiTF:
     """Test feature pipeline with multiple symbol/timeframe combinations."""
+
+    @staticmethod
+    def _ensure_data_cfg(cfg: dict) -> dict:
+        """Backward-compat alias to attach DataConfig when fixture returns raw dict."""
+        if "data_cfg" not in cfg and "data" in cfg:
+            cfg["data_cfg"] = DataConfig.from_dict(cfg["data"])
+        return cfg
 
     @pytest.fixture
     def temp_ohlcv_data(self):
@@ -71,7 +79,7 @@ class TestFeaturePipelineMultiTF:
 
     @pytest.fixture
     def temp_system_config(self, temp_ohlcv_data):
-        """Create a temporary system.yml with multi-TF configuration."""
+        """Create an in-memory system config with multi-TF configuration."""
         with tempfile.TemporaryDirectory() as tmpdir:
             config_path = Path(tmpdir) / "system.yml"
 
@@ -141,7 +149,10 @@ notifications:
             with open(config_path, "w") as f:
                 f.write(config_content)
 
-            yield str(config_path)
+            with open(config_path, "r") as f:
+                cfg = yaml.safe_load(f) or {}
+
+            yield cfg
 
     def test_pipeline_works_for_all_combinations(self, temp_system_config):
         """Test that pipeline successfully builds features for all symbol/TF combos."""
@@ -149,7 +160,7 @@ notifications:
         if not os.getenv("FCM_SERVER_KEY"):
             os.environ["FCM_SERVER_KEY"] = "dummy_test_key"
 
-        cfg = load_system_config(temp_system_config)
+        cfg = self._ensure_data_cfg(temp_system_config)
         data_cfg = cfg["data_cfg"]
 
         symbols = data_cfg.symbols
@@ -183,7 +194,7 @@ notifications:
         if not os.getenv("FCM_SERVER_KEY"):
             os.environ["FCM_SERVER_KEY"] = "dummy_test_key"
 
-        cfg = load_system_config(temp_system_config)
+        cfg = temp_system_config
 
         # Build features for 15m (10-day lookback)
         df_15m, _ = build_feature_pipeline_from_system_config(
@@ -213,7 +224,7 @@ notifications:
         if not os.getenv("FCM_SERVER_KEY"):
             os.environ["FCM_SERVER_KEY"] = "dummy_test_key"
 
-        cfg = load_system_config(temp_system_config)
+        cfg = self._ensure_data_cfg(temp_system_config)
         data_cfg = cfg["data_cfg"]
 
         for symbol in data_cfg.symbols:
@@ -232,7 +243,7 @@ notifications:
         if not os.getenv("FCM_SERVER_KEY"):
             os.environ["FCM_SERVER_KEY"] = "dummy_test_key"
 
-        cfg = load_system_config(temp_system_config)
+        cfg = temp_system_config
 
         symbol = "ETHUSDT"
         timeframe = "1h"
@@ -253,7 +264,7 @@ notifications:
         if not os.getenv("FCM_SERVER_KEY"):
             os.environ["FCM_SERVER_KEY"] = "dummy_test_key"
 
-        cfg = load_system_config(temp_system_config)
+        cfg = temp_system_config
 
         # Build features for BTCUSDT
         df_btc, _ = build_feature_pipeline_from_system_config(

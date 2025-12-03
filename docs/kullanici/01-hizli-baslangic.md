@@ -284,7 +284,7 @@ Bu kılavuzda:
 
 **Kaynak Dosyalar:**
 - [scripts/run_backtest.py](../../scripts/run_backtest.py)
-- [config/system.yml](../../config/system.yml)
+- [config/system.research.yml](../../config/system.research.yml)
 
 ---
 

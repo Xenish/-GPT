@@ -126,7 +126,7 @@ class WarehouseConfig:
     """Time-series warehouse configuration (Timescale/DuckDB)."""
 
     backend: str = "timescale"
-    dsn: Optional[str] = None
+    dsn_env: str = "FT_TIMESCALE_DSN"
     ohlcv_table: str = "raw_ohlcv"
     funding_table: str = "raw_funding_rates"
     open_interest_table: str = "raw_open_interest"
@@ -134,23 +134,27 @@ class WarehouseConfig:
     sentiment_table: str = "raw_sentiment"
     live_batch_size: int = 500
 
+    def get_dsn(self, allow_missing: bool = False) -> Optional[str]:
+        dsn = os.getenv(self.dsn_env, "").strip()
+        if dsn:
+            return dsn
+        if allow_missing:
+            return None
+        raise RuntimeError(
+            f"Warehouse backend '{self.backend}' requires env {self.dsn_env} to be set."
+        )
+
+    @property
+    def dsn(self) -> Optional[str]:
+        """Backward-compatible accessor that resolves DSN from environment."""
+        return self.get_dsn(allow_missing=False)
+
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "WarehouseConfig":
         data = data or {}
-        raw_dsn = data.get("dsn")
-        dsn: Optional[str] = None
-        if raw_dsn:
-            try:
-                dsn = resolve_env_placeholders(raw_dsn)
-            except RuntimeError as exc:
-                logging.warning(
-                    "Warehouse DSN env not set, using raw value; %s",
-                    exc,
-                )
-                dsn = raw_dsn
         return cls(
             backend=data.get("backend", cls.backend),
-            dsn=dsn,
+            dsn_env=data.get("dsn_env", cls.dsn_env),
             ohlcv_table=data.get("ohlcv_table", cls.ohlcv_table),
             funding_table=data.get("funding_table", cls.funding_table),
             open_interest_table=data.get("open_interest_table", cls.open_interest_table),
@@ -747,21 +751,11 @@ def _propagate_source_timeframe(data_cfg: DataConfig, global_timeframe: str) -> 
     return data_cfg
 
 
-def load_system_config(path: str | Path) -> Dict[str, Any]:
+def _load_system_config_impl(path: str | Path) -> Dict[str, Any]:
     """
-    Load the project-level system configuration with profile support.
-
-    Profiles (system.research.yml / system.live.yml) automatically inherit from
-    system.base.yml if it exists.
-
-    Args:
-        path: Config file path (required)
-
-    Returns:
-        Merged config dictionary with all required fields
-
-    Raises:
-        FileNotFoundError: If config file doesn't exist
+    Internal loader that keeps profile/base merge logic.
+    Use load_config(profile=...) as the public API.
+    Note: top-level 'mode' is deprecated; 'profile' is authoritative.
     """
     if path is None:
         raise ValueError("Config path must be provided. Use load_config(profile) for profiles.")
@@ -799,15 +793,21 @@ def load_system_config(path: str | Path) -> Dict[str, Any]:
     else:
         merged = _deep_merge(DEFAULT_SYSTEM_CONFIG, user_cfg)
 
-    # Ensure 'mode' field exists (critical for safety checks)
+    # Ensure 'profile' field exists (authoritative)
+    profile = merged.get("profile") or merged.get("mode")
+    if not profile:
+        raise ValueError("Config must define a 'profile' field (e.g., 'research' or 'live').")
+    merged["profile"] = profile
+    # Backward-compat: some callers still inspect top-level mode
     if "mode" not in merged:
-        merged["mode"] = "unknown"
+        merged["mode"] = profile
 
     # Add config metadata for debugging and validation
     merged["_config_meta"] = {
         "config_path": str(cfg_path),
         "is_profile": is_profile,
         "has_base": bool(base_cfg),
+        "profile": merged.get("profile", "unknown"),
         "mode": merged.get("mode", "unknown"),
     }
 
@@ -829,6 +829,10 @@ def load_system_config(path: str | Path) -> Dict[str, Any]:
         merged["data_cfg"],
         merged.get("timeframe", "15m")
     )
+    # Legacy alias: expose raw data under data_cfg for backward compatibility
+    if "data_cfg" not in merged and "data" in merged:
+        merged["data_cfg"] = merged["data"]
+
     merged["warehouse_cfg"] = WarehouseConfig.from_dict(merged.get("warehouse", {}))
 
     # Load market_structure and microstructure configs
@@ -845,7 +849,14 @@ def load_config(profile: ProfileName) -> Dict[str, Any]:
         path = PROFILE_PATHS[profile]
     except KeyError:
         raise ValueError(f"Unknown profile: {profile!r}")
-    return load_system_config(path=path)
+    return _load_system_config_impl(path=path)
+
+
+def load_system_config(path: str | Path) -> Dict[str, Any]:
+    raise RuntimeError(
+        "load_system_config is deprecated and disabled. "
+        "Use load_config(profile=...) with system.research.yml or system.live.yml."
+    )
 
 
 def load_exchange_credentials(cfg: ExchangeConfig) -> tuple[str, str]:
@@ -868,7 +879,6 @@ def load_exchange_credentials(cfg: ExchangeConfig) -> tuple[str, str]:
 
 
 __all__ = [
-    "load_system_config",
     "load_config",
     "DataConfig",
     "EventBarConfig",

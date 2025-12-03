@@ -1,0 +1,5 @@
+name: "ema_example"
+class_path: "finantradealgo.strategies.ema_cross.EMACrossStrategy"
+params:
+  fast: 20
+  slow: 50

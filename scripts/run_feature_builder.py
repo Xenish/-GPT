@@ -2,8 +2,8 @@
 Feature build runner supporting batch and incremental modes.
 
 Examples:
-    python scripts/run_feature_builder.py batch --symbols BTCUSDT --timeframes 15m --config config/system.yml
-    python scripts/run_feature_builder.py incremental --symbols BTCUSDT --timeframes 15m --config config/system.yml
+    python scripts/run_feature_builder.py batch --symbols BTCUSDT --timeframes 15m --config config/system.research.yml
+    python scripts/run_feature_builder.py incremental --symbols BTCUSDT --timeframes 15m --config config/system.research.yml
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import pandas as pd
 
 from finantradealgo.features.feature_builder import FeatureBuilderService, FeatureSinkConfig
 from finantradealgo.data_engine.ingestion.state import IngestionStateStore, init_state_store
-from finantradealgo.system.config_loader import load_config, load_system_config
+from finantradealgo.system.config_loader import load_config
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -64,7 +64,11 @@ def _build_sink(kind: str, output_dir: Path, duckdb_path: Path | None, duckdb_ta
 @click.pass_context
 def cli(ctx: click.Context, profile: str, config: str | None, output_dir: Path | None, sink: str, duckdb_path: Path | None, duckdb_table: str):
     os.environ.setdefault("FCM_SERVER_KEY", "dummy_feature_builder_key")
-    sys_cfg = load_system_config(config) if config else load_config(profile)
+    if config:
+        raise RuntimeError(
+            "Explicit config path is no longer supported. Use load_config(profile=...) with system.research.yml or system.live.yml."
+        )
+    sys_cfg = load_config(profile)
     data_cfg = sys_cfg["data_cfg"]
     sink_cfg = _build_sink(
         sink,
@@ -106,15 +110,16 @@ def batch(ctx: click.Context, symbols, timeframes, start, end):
 @click.option("--timeframes", multiple=True, help="Timeframes to build.")
 @click.option("--job-name", default="feature_incremental", help="Watermark job name.")
 @click.option("--context-bars", type=int, default=500, help="Bars of context to include before watermark.")
-@click.option("--dsn", default=None, help="State store DSN (defaults to warehouse.dsn).")
+@click.option("--dsn", default=None, help="State store DSN (overrides warehouse.dsn_env).")
 @click.pass_context
 def incremental(ctx: click.Context, symbols, timeframes, job_name: str, context_bars: int, dsn: str | None):
     svc: FeatureBuilderService = ctx.obj["service"]
     cfg = ctx.obj["cfg"]
     wh_cfg = cfg["warehouse_cfg"]
-    dsn_resolved = dsn or wh_cfg.dsn
-    if not dsn_resolved:
-        raise click.UsageError("State store DSN not set (use --dsn or warehouse.dsn).")
+    if dsn:
+        dsn_resolved = dsn
+    else:
+        dsn_resolved = wh_cfg.get_dsn()
     state_store = init_state_store(dsn_resolved)
     symbols_list = _resolve_symbols(cfg, symbols)
     tfs_list = _resolve_timeframes(cfg, timeframes)

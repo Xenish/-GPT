@@ -19,7 +19,7 @@
 
 Madde 1: Global data_root tanımı
 Durum: ❌
-Dayanak: config/system.yml, config/system.base.yml, finantradealgo/system/config_loader.py (lines 66-106) (DataConfig)
+Dayanak: config/system.research.yml, config/system.live.yml, config/system.base.yml, finantradealgo/system/config_loader.py (lines 66-106) (DataConfig)
 Açıklama: Config’te tekil bir data_root/base_dir tanımı yok; DataConfig’te base_dir alanı var ama hiçbir profil dosyasında set edilmiyor ve OHLCV şablonları doğrudan data/… ile hardcoded geliyor, dolayısıyla kök yol tek noktadan yönetilmiyor.
 Tasks:
 
@@ -28,7 +28,7 @@ Tasks:
  Dokümanlarda (örn. docs/core_config_profiles.md) data_root kullanımını örnekle.
 Madde 2: OHLCV path şablonu
 Durum: ⚠️
-Dayanak: config/system.yml:data.ohlcv_path_template, config/system.base.yml:data.ohlcv_path_template, finantradealgo/system/config_loader.py (line 69)
+Dayanak: config/system.research.yml:data.ohlcv_path_template, config/system.base.yml:data.ohlcv_path_template, finantradealgo/system/config_loader.py (line 69)
 Açıklama: Tekil bir şablon mevcut (data/ohlcv/{symbol}_{timeframe}.csv) ancak data_root placeholder’ı yok ve sembol/timeframe klasör hiyerarşisi yerine düz CSV adı kullanılıyor; checklist’teki {data_root}/ohlcv/{symbol}/{timeframe}.parquet benzeri yapı sağlanmıyor.
 Tasks:
 

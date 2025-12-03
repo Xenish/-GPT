@@ -11,7 +11,7 @@ def main() -> None:
     cfg = load_config("live")
     exchange_cfg = cfg.get("exchange_cfg")
     if exchange_cfg is None:
-        raise RuntimeError("Exchange config not found. Check config/system.yml.")
+        raise RuntimeError("Exchange config not found. Check config/system.live.yml.")
 
     api_key, secret = load_exchange_credentials(exchange_cfg)
     client = BinanceFuturesClient(exchange_cfg, api_key, secret)
@@ -25,7 +25,7 @@ def main() -> None:
     if getattr(exchange_cfg, "dry_run", True):
         print(
             "Dry run enabled (exchange.dry_run=true). Order placement skipped. "
-            "Set dry_run=false in config/system.yml to test actual order flow."
+            "Set dry_run=false in system.live.yml to test actual order flow."
         )
         return
 

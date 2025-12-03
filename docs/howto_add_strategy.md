@@ -26,7 +26,7 @@
            ...
    ```
 
-## 2. Expose in config/system.yml
+## 2. Expose in config/system.research.yml / config/system.live.yml
 ```yaml
 strategy:
   selected: my_new_strategy

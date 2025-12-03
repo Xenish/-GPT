@@ -5,24 +5,39 @@ from __future__ import annotations
 import asyncio
 import functools
 from typing import Any, Callable, Mapping
+from contextlib import contextmanager
 
 from fastapi import FastAPI
-from opentelemetry import trace
-from opentelemetry.sdk.resources import Resource
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import (
-    BatchSpanProcessor,
-    ConsoleSpanExporter,
-    OTLPSpanExporter,
-    SpanExporter,
-)
-from opentelemetry.semconv.resource import ResourceAttributes
-from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+
+try:
+    from opentelemetry import trace
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import (
+        BatchSpanProcessor,
+        ConsoleSpanExporter,
+        OTLPSpanExporter,
+        SpanExporter,
+    )
+    from opentelemetry.semconv.resource import ResourceAttributes
+    from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
+except ImportError:  # OpenTelemetry optional
+    trace = None
+    Resource = None
+    TracerProvider = None
+    BatchSpanProcessor = None
+    ConsoleSpanExporter = None
+    OTLPSpanExporter = None
+    SpanExporter = None
+    ResourceAttributes = None
+    FastAPIInstrumentor = None
 
 from .metrics_collector import MonitoringConfig
 
 
 def _build_resource(config: MonitoringConfig) -> Resource:
+    if Resource is None or ResourceAttributes is None:  # type: ignore[truthy-bool]
+        raise RuntimeError("OpenTelemetry not installed; cannot build tracing resource.")
     service_name = config.service_name or "finantrade_service"
     attributes: dict[str, Any] = {
         ResourceAttributes.SERVICE_NAME: service_name,
@@ -36,6 +51,8 @@ def _build_resource(config: MonitoringConfig) -> Resource:
 
 
 def _build_exporter(config: MonitoringConfig) -> SpanExporter:
+    if SpanExporter is None:
+        raise RuntimeError("OpenTelemetry not installed; cannot build span exporter.")
     if config.otlp_endpoint:
         return OTLPSpanExporter(
             endpoint=config.otlp_endpoint,
@@ -50,6 +67,9 @@ def initialize_tracing(config: MonitoringConfig) -> TracerProvider:
 
     Returns the initialized TracerProvider so the caller can reuse it.
     """
+    if trace is None or TracerProvider is None or BatchSpanProcessor is None:
+        # OTel not available; no-op
+        return None  # type: ignore[return-value]
     resource = _build_resource(config)
     provider = TracerProvider(resource=resource)
     exporter = _build_exporter(config)
@@ -64,6 +84,8 @@ def instrument_fastapi_app(app: FastAPI, tracer_provider: TracerProvider | None 
     Attach FastAPI instrumentation for request spans.
     Call after tracer_provider is initialized.
     """
+    if FastAPIInstrumentor is None:
+        return
     if tracer_provider:
         trace.set_tracer_provider(tracer_provider)
     FastAPIInstrumentor.instrument_app(app, tracer_provider=trace.get_tracer_provider())
@@ -80,7 +102,18 @@ def trace_span(span_name: str, **base_attributes: Any) -> Callable[[Callable[...
     """
 
     def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-        tracer = trace.get_tracer(__name__)
+        if trace is None:
+            @contextmanager
+            def dummy_span(*args: Any, **kwargs: Any):
+                yield
+
+            class DummyTracer:
+                def start_as_current_span(self, *args: Any, **kwargs: Any):
+                    return dummy_span()
+
+            tracer = DummyTracer()
+        else:
+            tracer = trace.get_tracer(__name__)
 
         if asyncio.iscoroutinefunction(func):  # type: ignore[name-defined]
 

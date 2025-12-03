@@ -165,44 +165,18 @@ FT_CONFIG_PATH=config/system.live.yml python scripts/run_api.py
 
 ### Config Loading
 
-`load_system_config(path=None)` automatically:
+`load_config(profile="research"|"live")` automatically:
 
-1. Reads `path` or `$FT_CONFIG_PATH` or defaults to `config/system.yml`
-2. Detects if it's a profile config (`system.research.yml` / `system.live.yml`)
-3. If profile:
-   - Loads `system.base.yml` first
-   - Deep merges: `DEFAULT → base → profile`
-4. Adds `_config_meta` for debugging:
-   ```python
-   {
-       "config_path": "config/system.research.yml",
-       "is_profile": True,
-       "has_base": True,
-       "mode": "research"
-   }
-   ```
+1. Resolves profile to `config/system.research.yml` or `config/system.live.yml`
+2. Loads `system.base.yml` first (if present)
+3. Deep merges: `DEFAULT → base → profile`
+4. Adds `_config_meta` for debugging (path/mode/is_profile)
 
 ### Safety Checks (Mode Assertions)
 
-**Backtest Scripts** (`run_backtest.py`, etc.):
-```python
-cfg = load_system_config(path=args.config)
-cfg_mode = cfg.get("mode", "unknown")
-if cfg_mode != "research":
-    raise RuntimeError(
-        f"Backtest must run with mode='research' config. Got mode='{cfg_mode}'"
-    )
-```
+**Backtest Scripts** (`run_backtest.py`, etc.): use `load_config("research")` and assert mode is `research`.
 
-**Live Scripts** (`run_live_paper.py`, `run_live_exchange.py`):
-```python
-cfg = load_system_config(path=args.config)
-cfg_mode = cfg.get("mode", "unknown")
-if cfg_mode not in ("live", "paper"):
-    raise RuntimeError(
-        f"Live trading must run with mode='live' or mode='paper' config. Got mode='{cfg_mode}'"
-    )
-```
+**Live Scripts** (`run_live_paper.py`, `run_live_exchange.py`): use `load_config("live")` and assert mode is `live` or `paper`.
 
 ## CLI Usage
 
@@ -241,8 +215,8 @@ python scripts/run_api.py
 - Use `mode` field to identify config purpose
 - Test config loading with:
   ```python
-  from finantradealgo.system.config_loader import load_system_config
-  cfg = load_system_config('config/system.research.yml')
+  from finantradealgo.system.config_loader import load_config
+  cfg = load_config('research')
   print(f"Mode: {cfg['mode']}")
   print(f"Meta: {cfg['_config_meta']}")
   ```

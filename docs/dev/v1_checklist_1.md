@@ -38,7 +38,7 @@ Açıklama: Live/paper profili mevcut; exchange.type: live, testnet/paper ayarla
 Madde 3: Tek entrypoint ile profil yükleme (Literal["research","live"])
 Durum: ❌
 Dayanak: finantradealgo/system/config_loader.py, finantradealgo/system/__init__.py, tests/unit/test_system_config_loader.py
-Açıklama: Yükleyici yalnızca load_system_config(path=None) sağlıyor; profil ismi alan bir load_config(profile: Literal["research","live"]) yok. Yanlış profil string’i için ValueError yerine yalnızca dosya yoksa FileNotFoundError geliyor.
+Açıklama: Yükleyici artık tek resmi API olarak load_config(profile: Literal["research","live"]) sağlıyor; profil string’i yanlışsa ValueError fırlatır.
 Tasks:
 
  finantradealgo/system/config_loader.py içine load_config(profile: Literal["research","live"]) ekle; "research"/"live" için ilgili YAML’e yönlendir, başka değerlerde ValueError fırlat.
@@ -46,8 +46,8 @@ Tasks:
  tests/unit/test_system_config_loader.py içine araştırma ve live profilleri için başarı, geçersiz profil için ValueError testleri ekle.
 Madde 4: Pytest’in varsayılanı research config ve profil testleri
 Durum: ❌
-Dayanak: pytest.ini, config/system.yml, tests/unit/test_system_config_loader.py
-Açıklama: Pytest default’ta config/system.yml’i kullanıyor; research profiline pinlenmiş bir fixture yok, dolayısıyla live endpoint’e yönelmemeyi garantileyen bir ayar/test bulunmuyor. Ayrıca load_config("research")/("live") çağrılarının doğru tip döndürdüğünü doğrulayan test yok.
+Dayanak: pytest.ini, config/system.research.yml, tests/unit/test_system_config_loader.py
+Açıklama: Testler sadece `load_config("research"|"live")` ile çalışmalı; profil dışı path yükleyici yok. Profil seçimlerinin doğru tip döndürdüğünü doğrulayan test olmalı.
 Tasks:
 
  tests/conftest.py içinde FT_CONFIG_PATH=config/system.research.yml’i pytest başlangıcında set eden bir fixture/auto-use hook ekle; gerektiğinde network çağrılarını stubla.
@@ -55,7 +55,7 @@ Tasks:
  Live/real endpoint çağrılarını engellemek için ilgili client/HTTP katmanını pytest’te monkeypatch et (örn. binance client mock).
 Madde 5: Örnek strateji config’leri ve backtest CLI uyumu
 Durum: ⚠️
-Dayanak: config/ema_example.yml, config/rsi_example.yml, scripts/run_backtest.py
+Dayanak: config/strategies/ema_example.yml, config/strategies/rsi_example.yml, scripts/run_backtest.py
 Açıklama: EMA ve RSI örnek config’leri var ama config/strategies/ dizini yok ve dosya yolları checklist’te istenen isimlerle eşleşmiyor. Backtest CLI mevcut system config’i okuyor; bu örnek YAML’larla çalışan bir CLI/API akışı veya test yok.
 Tasks:
 

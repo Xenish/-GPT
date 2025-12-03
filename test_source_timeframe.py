@@ -9,7 +9,7 @@ Verifies that:
 """
 
 import os
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 # Set dummy FCM key for testing (if not already set)
 if not os.getenv("FCM_SERVER_KEY"):
@@ -20,7 +20,7 @@ def test_source_timeframe_propagation():
     """Test the source_timeframe auto-propagation feature."""
 
     # Load system config
-    cfg = load_system_config("config/system.yml")
+    cfg = load_config("research")
 
     # Extract relevant values
     global_timeframe = cfg.get("timeframe", "15m")

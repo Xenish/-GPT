@@ -96,7 +96,7 @@ cp .env.example .env
 
 Testnet dry-run:
 ```bash
-# config/system.yml içinde exchange.dry_run=true iken
+# config/system.live.yml içinde exchange.dry_run=true iken
 python scripts/run_exchange_dry_test.py
 # Binance testnet endpointlerine bağlanır, account info basar, order göndermeden çıkar.
 ```
@@ -116,7 +116,7 @@ Exchange modunu denemek için:
 ```bash
 python scripts/run_live_exchange_15m.py
 ```
-`config/system.yml` içindeki `exchange.testnet=true` ve `exchange.dry_run=true` olduğundan emin olun. Testnet dışına çıkmadan önce minimum notional / düşük kaldıraçla deneyin ve `dry_run` bayrağını kaldırmadan önce gerçek API key'lerinizi kontrol edin.
+`config/system.live.yml` içindeki `exchange.testnet=true` ve `exchange.dry_run=true` olduğundan emin olun. Testnet dışına çıkmadan önce minimum notional / düşük kaldıraçla deneyin ve `dry_run` bayrağını kaldırmadan önce gerçek API key'lerinizi kontrol edin.
 
 ## Kısaltılmış Dosya Ağacı
 ```

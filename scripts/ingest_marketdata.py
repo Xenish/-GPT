@@ -2,9 +2,9 @@
 Unified ingestion entrypoint for historical backfill, live WS ingest, and gap repair.
 
 Examples:
-    python scripts/ingest_marketdata.py historical --config config/system.yml --symbols BTCUSDT --timeframes 1m 15m --lookback-days 30
-    python scripts/ingest_marketdata.py live --config config/system.yml --symbols BTCUSDT --max-messages 500
-    python scripts/ingest_marketdata.py repair-gaps --config config/system.yml --symbols BTCUSDT --timeframes 15m --lookback-hours 12
+    python scripts/ingest_marketdata.py historical --config config/system.research.yml --symbols BTCUSDT --timeframes 1m 15m --lookback-days 30
+    python scripts/ingest_marketdata.py live --config config/system.live.yml --symbols BTCUSDT --max-messages 500
+    python scripts/ingest_marketdata.py repair-gaps --config config/system.research.yml --symbols BTCUSDT --timeframes 15m --lookback-hours 12
 """
 
 from __future__ import annotations
@@ -28,7 +28,6 @@ from finantradealgo.system.config_loader import (
     WarehouseConfig,
     load_config,
     load_exchange_credentials,
-    load_system_config,
 )
 from finantradealgo.data_engine.binance_ws_source import BinanceWsDataSource
 
@@ -58,8 +57,7 @@ def _resolve_timeframes(cfg: dict, cli_timeframes: Iterable[str] | None) -> list
 
 def _build_warehouse(cfg: dict) -> TimescaleWarehouse:
     wh_cfg: WarehouseConfig = cfg["warehouse_cfg"]
-    if not wh_cfg.dsn:
-        raise click.UsageError("warehouse.dsn is required (set in system.yml or FT_TIMESCALE_DSN env).")
+    dsn = wh_cfg.get_dsn()
     table_map = {
         "ohlcv": wh_cfg.ohlcv_table,
         "funding": wh_cfg.funding_table,
@@ -67,7 +65,7 @@ def _build_warehouse(cfg: dict) -> TimescaleWarehouse:
         "flow": wh_cfg.flow_table,
         "sentiment": wh_cfg.sentiment_table,
     }
-    return TimescaleWarehouse(wh_cfg.dsn, table_map=table_map, batch_size=wh_cfg.live_batch_size)
+    return TimescaleWarehouse(dsn, table_map=table_map, batch_size=wh_cfg.live_batch_size)
 
 
 @click.group()
@@ -77,7 +75,11 @@ def _build_warehouse(cfg: dict) -> TimescaleWarehouse:
 def cli(ctx: click.Context, profile: str, config: str | None):
     # Ensure optional FCM env placeholder is satisfied for config parsing
     os.environ.setdefault("FCM_SERVER_KEY", "dummy_ingest_key")
-    cfg = load_system_config(config) if config else load_config(profile)
+    if config:
+        raise RuntimeError(
+            "Explicit config path is no longer supported. Use load_config(profile=...) with system.research.yml or system.live.yml."
+        )
+    cfg = load_config(profile)
     ctx.ensure_object(dict)
     ctx.obj["cfg"] = cfg
     ctx.obj["warehouse"] = _build_warehouse(cfg)

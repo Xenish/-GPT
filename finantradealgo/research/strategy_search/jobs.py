@@ -55,13 +55,13 @@ class StrategySearchJob:
         symbol: Trading symbol
         timeframe: Trading timeframe
         search_type: Type of search ("random" | "grid")
-        n_samples: Number of parameter samples to evaluate
-        config_path: Path to system config used for search
-        created_at: Job creation timestamp
-        notes: Optional notes about the job
-        seed: Random seed for reproducibility
-        mode: Config mode (should be "research")
-        config_snapshot_relpath: Relative path to config snapshot in job dir
+         n_samples: Number of parameter samples to evaluate
+         profile: Config profile used for search ("research" | "live")
+         created_at: Job creation timestamp
+         notes: Optional notes about the job
+         seed: Random seed for reproducibility
+         mode: Config mode (should be "research")
+         config_snapshot_relpath: Relative path to config snapshot in job dir
     """
     job_id: str
     strategy: str
@@ -69,8 +69,8 @@ class StrategySearchJob:
     timeframe: str
     search_type: Literal["random", "grid"]
     n_samples: int
-    config_path: str
     created_at: datetime
+    profile: str = "research"
     notes: Optional[str] = None
     seed: Optional[int] = None
     mode: str = "research"
@@ -85,7 +85,7 @@ class StrategySearchJob:
             "timeframe": self.timeframe,
             "search_type": self.search_type,
             "n_samples": self.n_samples,
-            "config_path": self.config_path,
+            "profile": self.profile,
             "created_at": self.created_at.isoformat(),
             "notes": self.notes,
             "seed": self.seed,
@@ -193,7 +193,7 @@ class StrategySearchJobConfig:
             "notes": self.notes,
         }
 
-    def to_job(self, config_path: str) -> StrategySearchJob:
+    def to_job(self, profile: str = "research") -> StrategySearchJob:
         """Convert to StrategySearchJob for execution."""
         job_id = create_job_id(
             self.strategy_name,
@@ -207,7 +207,7 @@ class StrategySearchJobConfig:
             timeframe=self.timeframe,
             search_type=self.mode,
             n_samples=self.n_samples,
-            config_path=config_path,
+            profile=profile,
             created_at=datetime.utcnow(),
             notes=self.notes,
             seed=self.random_seed,

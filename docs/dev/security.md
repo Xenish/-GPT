@@ -1,7 +1,7 @@
 # Security Guidelines
 
 ## API Key Management
-- Store sensitive credentials in environment variables, never directly in `config/system.yml`.
+- Store sensitive credentials in environment variables, never directly in profile configs (`config/system.research.yml` / `config/system.live.yml`).
 - Use placeholders like `${BINANCE_API_KEY}` and `${BINANCE_SECRET_KEY}` in the YAML; the loader resolves them via `resolve_env_placeholders`.
 - Keep a `.env` file (excluded from git) or export keys in your shell profile, e.g. `export BINANCE_API_KEY=...`.
 

@@ -17,7 +17,7 @@ DBConnectionConfig = getattr(postgres_module, "DBConnectionConfig", None)
 
 db_dsn = os.getenv(TEST_DSN_ENV)
 if not db_dsn:
-    pytest.skip(f"Skipping DB integration tests, {TEST_DSN_ENV} is not set")
+    pytest.skip(f"Skipping DB integration tests, {TEST_DSN_ENV} is not set", allow_module_level=True)
 
 
 def test_postgres_basic_roundtrip():

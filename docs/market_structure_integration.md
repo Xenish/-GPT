@@ -45,7 +45,7 @@ The **Market Structure Engine** identifies key market patterns and structures fr
 
 ### 1. Enable Market Structure Features
 
-Edit your `config/system.yml`:
+Edit your `config/system.research.yml` (or `config/system.live.yml` for live):
 
 ```yaml
 features:
@@ -243,9 +243,9 @@ The feature pipeline automatically adds market structure features when enabled:
 
 ```python
 # In your backtest or live trading setup
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
-cfg = load_system_config("config/system.yml")
+cfg = load_config("research")  # or "live"
 
 # Feature pipeline will check cfg.features.use_market_structure
 # and automatically call add_market_structure_features() if True
@@ -541,7 +541,7 @@ print(cols.trend_regime)  # "ms_trend_regime"
 
 **Solution:**
 ```yaml
-# In config/system.yml
+# In config/system.research.yml
 features:
   use_market_structure: true
 ```

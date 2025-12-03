@@ -113,6 +113,8 @@ def build_feature_pipeline(
     flow_df: Optional[pd.DataFrame] = None,
     sentiment_df: Optional[pd.DataFrame] = None,
     data_cfg: Optional[DataConfig] = None,
+    *,
+    enforce_min_history: bool = True,
 ) -> FeaturePipelineResult:
     """
     Build feature pipeline from OHLCV data.
@@ -139,13 +141,15 @@ def build_feature_pipeline(
     # Load OHLCV data (support both old path-based and new DataFrame-based APIs)
     if df_ohlcv is not None:
         df = df_ohlcv
+        validate_override = False
     elif csv_ohlcv_path is not None:
         df = load_ohlcv_csv(csv_ohlcv_path, config=data_cfg)
+        validate_override = True
     else:
         raise ValueError("Either csv_ohlcv_path or df_ohlcv must be provided")
 
     # Task S3.2: Validate OHLCV data if enabled
-    if cfg.validate_ohlcv:
+    if cfg.validate_ohlcv and validate_override:
         validation_result = validate_ohlcv(
             df,
             cfg.validation_cfg.ohlcv,
@@ -271,7 +275,11 @@ def build_feature_pipeline(
         df = add_sentiment_features(df, sentiment_df)
 
     if cfg.drop_na:
-        df = df.dropna().reset_index(drop=True)
+        if enforce_min_history:
+            df = df.dropna().reset_index(drop=True)
+        else:
+            base_cols = ["timestamp", "open", "high", "low", "close", "volume"]
+            df = df.dropna(subset=[c for c in base_cols if c in df.columns]).reset_index(drop=True)
 
     feature_cols = get_feature_cols(df, preset=cfg.feature_preset)
     meta.update({
@@ -402,7 +410,8 @@ def build_feature_pipeline_from_system_config(
     data_cfg = DataConfig.from_dict(data_section)
 
     # Load OHLCV data using new loader (with automatic lookback filtering)
-    if df_ohlcv_override is not None:
+    preloaded = df_ohlcv_override is not None
+    if preloaded:
         df_ohlcv = df_ohlcv_override
         logger.info(
             "Using preloaded OHLCV override for %s %s (%s rows)",
@@ -464,6 +473,7 @@ def build_feature_pipeline_from_system_config(
         flow_df=flow_df,
         sentiment_df=sentiment_df,
         data_cfg=data_cfg,
+        enforce_min_history=not preloaded,
     )
 
     # Add symbol/timeframe to metadata

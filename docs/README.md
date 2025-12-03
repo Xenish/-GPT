@@ -176,7 +176,7 @@ Sistemi API üzerinden kullanmak için:
 ## 🔗 Dışarıdan Linkler
 
 - **Ana Proje:** [README.md](../README.md)
-- **Konfigürasyon:** [config/system.yml](../config/system.yml)
+- **Konfigürasyon:** [config/system.research.yml](../config/system.research.yml) ve [config/system.live.yml](../config/system.live.yml)
 - **GitHub Issues:** Sorun bildirmek için
 - **Discussions:** Topluluk tartışmaları için
 

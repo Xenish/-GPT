@@ -101,7 +101,7 @@ async def create_strategy_search_job(request: StrategySearchJobRequest):
         timeframe=request.timeframe,
         search_type=request.mode,
         n_samples=request.n_samples,
-        config_path="config/system.research.yml",
+        profile="research",
         created_at=datetime.utcnow(),
         seed=request.random_seed,
         mode="research",

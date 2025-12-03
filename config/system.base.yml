@@ -218,7 +218,7 @@ portfolio:
 # ========================================================================
 warehouse:
   backend: timescale
-  dsn: ${FT_TIMESCALE_DSN}
+  dsn_env: FT_TIMESCALE_DSN
   ohlcv_table: raw_ohlcv
   funding_table: raw_funding_rates
   open_interest_table: raw_open_interest

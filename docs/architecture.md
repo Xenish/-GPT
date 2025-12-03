@@ -64,6 +64,6 @@ Raw Data  -->  data_engine  -->  features  -->  strategies + risk  -->  backtest
 7. **Frontend** consumes API for charting, labs, live control.
 
 ## Notes
-- Portfolio config (`config/system.yml`) controls multi-symbol backtests, equal/custom weights.
+- Portfolio config (`config/system.research.yml` / `config/system.live.yml`) controls multi-symbol backtests, equal/custom weights.
 - Scenario presets live under `scenario.presets`; CLI `scripts/run_scenario_grid_15m.py` enumerates grids.
 - CLI wrapper (`finantrade ...`) ties everything together for devops and CI use.

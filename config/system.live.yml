@@ -5,13 +5,14 @@
 # system.base.yml'deki ayarları inherit eder ve override eder.
 #
 # Kullanım:
-#   FT_CONFIG_PATH=config/system.live.yml python -m finantradealgo.scripts.run_live_trader
-#   FT_CONFIG_PATH=config/system.live.yml python -m finantradealgo.api.server
+#   python -m finantradealgo.scripts.run_live_exchange --profile live
+#   python -m finantradealgo.scripts.run_live_paper --profile live
+#   python -m finantradealgo.api.server --profile live
 
 # ============================================================================
-# MODE - KRITIK: Bu profil sadece live/paper için
+# PROFILE - KRITIK: Bu profil sadece live/paper için
 # ============================================================================
-mode: "paper"  # "paper" | "live" (production'da "live" olacak)
+profile: "live"
 
 # ============================================================================
 # EXCHANGE - Live/Paper Exchange
@@ -28,11 +29,9 @@ exchange:
   base_url_ws: "wss://fstream.binance.com"
   base_url_ws_testnet: "wss://stream.binancefuture.com"
 
-  # GERÇEK API KEYS (env'den alınır)
+  # API KEYS (env'den alınır)
   api_key_env: "BINANCE_FUTURES_API_KEY"
   secret_key_env: "BINANCE_FUTURES_API_SECRET"
-  api_key: "${BINANCE_FUTURES_API_KEY}"
-  secret_key: "${BINANCE_FUTURES_API_SECRET}"
 
   recv_window_ms: 5000
   time_sync: true  # Live'da ZORUNLU
@@ -145,7 +144,7 @@ logging:
 # ========================================================================
 warehouse:
   backend: timescale
-  dsn: ${FT_TIMESCALE_DSN}
+  dsn_env: FT_TIMESCALE_DSN
   ohlcv_table: raw_ohlcv
   funding_table: raw_funding_rates
   open_interest_table: raw_open_interest
@@ -159,9 +158,4 @@ warehouse:
 
 # Backtest bloku live'da kullanılmaz
 backtest:
-  warmup_bars: 0
-  slippage_pct: 0.0
-  commission_pct: 0.0
-  use_realistic_fills: false
-  log_trades: false
-  log_dir: null
+  enabled: false

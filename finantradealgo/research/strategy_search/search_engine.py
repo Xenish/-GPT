@@ -315,14 +315,6 @@ def run_random_search(
     # Get git SHA
     git_sha = _get_git_sha()
 
-    # Copy config snapshot to job directory
-    config_snapshot_name = "config_snapshot.yml"
-    config_src = Path(job.config_path)
-    if config_src.exists():
-        config_dst = job_dir / config_snapshot_name
-        shutil.copy2(config_src, config_dst)
-        job.config_snapshot_relpath = config_snapshot_name
-
     # Count successful vs failed evaluations
     n_success = (results_df["status"] == "ok").sum() if "status" in results_df.columns else len(results_df)
     n_errors = (results_df["status"] == "error").sum() if "status" in results_df.columns else 0
@@ -345,6 +337,7 @@ def run_random_search(
     meta_dict["n_success"] = int(n_success)
     meta_dict["n_errors"] = int(n_errors)
     meta_dict["data_snapshot"] = data_snapshot
+    meta_dict["profile"] = getattr(job, "profile", "research")
 
     meta_path = job_dir / "meta.json"
     import json

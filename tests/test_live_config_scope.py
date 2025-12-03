@@ -14,7 +14,7 @@ import pytest
 if not os.getenv("FCM_SERVER_KEY"):
     os.environ["FCM_SERVER_KEY"] = "dummy_test_key"
 
-from finantradealgo.system.config_loader import load_system_config
+from finantradealgo.system.config_loader import load_config
 
 
 class TestLiveConfigScope:
@@ -22,7 +22,7 @@ class TestLiveConfigScope:
 
     def test_live_config_has_single_symbol(self):
         """Test that live config specifies a single symbol."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         live_cfg = cfg.get("live", {})
         assert live_cfg, "Live config should be present"
@@ -42,7 +42,7 @@ class TestLiveConfigScope:
 
     def test_live_config_has_single_timeframe(self):
         """Test that live config specifies a single timeframe."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         live_cfg = cfg.get("live", {})
         assert live_cfg, "Live config should be present"
@@ -62,7 +62,7 @@ class TestLiveConfigScope:
 
     def test_live_uses_narrow_scope_vs_data_wide_scope(self):
         """Test that live config is narrow (1 combo) while data config is wide (many combos)."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         # Data config should have multiple symbols/timeframes (wide scope)
         data_cfg = cfg.get("data_cfg")
@@ -90,7 +90,7 @@ class TestLiveConfigScope:
 
     def test_live_symbol_is_common_live_choice(self):
         """Test that live config uses a common/sensible symbol choice."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         live_cfg = cfg.get("live", {})
         live_symbol = live_cfg.get("symbol", "")
@@ -104,7 +104,7 @@ class TestLiveConfigScope:
 
     def test_live_timeframe_is_common_live_choice(self):
         """Test that live config uses a common/sensible timeframe choice."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         live_cfg = cfg.get("live", {})
         live_timeframe = live_cfg.get("timeframe", "")
@@ -119,7 +119,7 @@ class TestLiveConfigScope:
 
     def test_live_config_prefers_15m_timeframe(self):
         """Test that live config defaults to 15m (good balance of signal quality vs frequency)."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         live_cfg = cfg.get("live", {})
         live_timeframe = live_cfg.get("timeframe", "")
@@ -130,7 +130,7 @@ class TestLiveConfigScope:
 
     def test_ml_targets_subset_of_data_combinations(self):
         """Test that ML targets are a small subset of all possible data combinations."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         # Get total possible combinations from data config
         data_cfg = cfg.get("data_cfg")
@@ -155,7 +155,7 @@ class TestLiveConfigScope:
 
     def test_live_mode_is_paper_or_exchange(self):
         """Test that live mode is correctly configured."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         live_cfg = cfg.get("live", {})
         mode = live_cfg.get("mode")
@@ -165,7 +165,7 @@ class TestLiveConfigScope:
 
     def test_live_config_has_risk_limits(self):
         """Test that live config has risk management limits."""
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         live_cfg = cfg.get("live", {})
 
@@ -188,7 +188,7 @@ class TestLiveConfigScope:
         - ML: small subset for expensive training
         - Live: exactly 1 combination for safe, focused trading
         """
-        cfg = load_system_config("config/system.yml")
+        cfg = load_config("live")
 
         # Wide research universe
         data_cfg = cfg.get("data_cfg")

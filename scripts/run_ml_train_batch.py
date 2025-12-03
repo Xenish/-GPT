@@ -1,12 +1,12 @@
 """
 Batch ML training script for multiple symbol/timeframe combinations.
 
-Uses ml.targets configuration from system.yml to train models only
+Uses ml.targets configuration from system.research.yml to train models only
 for specified combinations instead of all possible combinations.
 
 Usage:
     python scripts/run_ml_train_batch.py
-    python scripts/run_ml_train_batch.py --config config/system.yml
+    python scripts/run_ml_train_batch.py --config config/system.research.yml
 """
 
 from __future__ import annotations

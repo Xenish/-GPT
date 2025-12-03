@@ -33,6 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
+from finantradealgo.research.strategy_search.search_engine import REQUIRED_RESULT_COLUMNS
 
 
 def load_results(
@@ -67,19 +68,17 @@ def load_results(
 
     if not results_path.exists():
         raise FileNotFoundError(f"results.parquet not found in {job_path}")
+    if include_meta and not meta_path.exists():
+        raise FileNotFoundError(f"meta.json not found in {job_path}")
 
     df = pd.read_parquet(results_path)
 
     # Validate required columns
-    required_cols = {"params", "cum_return", "sharpe", "max_drawdown", "win_rate", "trade_count"}
-    missing = required_cols - set(df.columns)
+    missing = REQUIRED_RESULT_COLUMNS - set(df.columns)
     if missing:
         raise ValueError(f"Results missing required columns: {missing}")
 
     if include_meta:
-        if not meta_path.exists():
-            raise FileNotFoundError(f"meta.json not found in {job_path}")
-
         import json
         with meta_path.open("r", encoding="utf-8") as f:
             meta = json.load(f)
@@ -138,6 +137,11 @@ def filter_by_metrics(
         ...     cum_return_max=0.20,
         ... )
     """
+    expected_cols = {"cum_return", "sharpe", "max_drawdown", "win_rate", "trade_count"}
+    missing = expected_cols - set(df.columns)
+    if missing:
+        raise ValueError(f"DataFrame missing required metric columns: {missing}")
+
     result = df.copy()
 
     # Apply filters

@@ -2,122 +2,152 @@
 Run Strategy Parameter Search.
 
 This script performs parameter search for a strategy and persists results
-with full reproducibility (config snapshot, git SHA, job metadata).
+with full reproducibility (git SHA, job metadata).
 
 Usage:
-    python -m scripts.run_strategy_search --strategy rule --symbol BTCUSDT --timeframe 15m --n-samples 100
-
-    python -m scripts.run_strategy_search \
-        --config config/system.research.yml \
-        --strategy trend_continuation \
-        --symbol AIAUSDT \
-        --timeframe 15m \
-        --n-samples 50 \
-        --job-id custom_job_id \
-        --seed 42 \
-        --notes "Testing trend strategy with conservative params"
+    python -m scripts.run_strategy_search --profile research --strategy rule --symbol BTCUSDT --timeframe 15m --n-samples 50
 
 Output:
     outputs/strategy_search/{job_id}/
     - results.parquet       # Search results
-    - meta.json            # Job metadata + git_sha
-    - config_snapshot.yml  # Config snapshot
+    - meta.json             # Job metadata + git_sha
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import os
 import sys
-from datetime import datetime
 from pathlib import Path
+
+import pandas as pd
 
 # Add project root to path
 _project_root = Path(__file__).parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
 
-from finantradealgo.research.strategy_search.jobs import StrategySearchJob, create_job_id
-from finantradealgo.research.strategy_search.search_engine import run_random_search
+import finantradealgo.research.strategy_search.search_engine as se
+from finantradealgo.research.strategy_search.jobs import StrategySearchJobConfig
 from finantradealgo.strategies.strategy_engine import get_strategy_meta, get_searchable_strategies
 from finantradealgo.system.config_loader import load_config
 
 
-def parse_args():
+def build_parser():
     """Parse command-line arguments."""
     parser = argparse.ArgumentParser(
-        description="Run strategy parameter search with full job persistence",
+        description="Run strategy parameter search against research profile",
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=__doc__,
     )
 
     parser.add_argument(
         "--profile",
-        choices=["research", "live"],
+        type=str,
         default="research",
-        help="Config profile to load (default: research)",
+        choices=["research"],
+        help="Config profile to load (only 'research' is allowed).",
     )
-
     parser.add_argument(
         "--strategy",
+        "--strategy-name",
+        dest="strategy",
         type=str,
-        default=None,
-        help="Strategy name (e.g., 'rule', 'trend_continuation', 'sweep_reversal')",
+        required=True,
+        help="Strategy name (e.g., rule, trend_continuation).",
     )
-
     parser.add_argument(
         "--symbol",
         type=str,
-        default=None,
-        help="Trading symbol (e.g., 'BTCUSDT', 'AIAUSDT')",
+        required=True,
+        help="Trading symbol (e.g., 'BTCUSDT', 'AIAUSDT').",
     )
-
     parser.add_argument(
         "--timeframe",
         type=str,
-        default=None,
-        help="Timeframe (e.g., '5m', '15m', '1h')",
+        required=True,
+        help="Timeframe (e.g., '5m', '15m', '1h').",
     )
-
+    parser.add_argument(
+        "--search-type",
+        type=str,
+        default="random",
+        choices=["random", "grid"],
+        help="Search mode (default: random).",
+    )
     parser.add_argument(
         "--n-samples",
         type=int,
-        default=None,
-        help="Number of parameter samples to evaluate",
+        default=50,
+        help="Number of parameter samples to evaluate (default: 50).",
     )
-
-    parser.add_argument(
-        "--job-id",
-        type=str,
-        default=None,
-        help="Custom job ID (default: auto-generated from strategy/symbol/timeframe/timestamp)",
-    )
-
     parser.add_argument(
         "--seed",
         type=int,
         default=None,
-        help="Random seed for reproducibility (optional)",
+        help="Random seed for reproducibility (optional).",
     )
-
     parser.add_argument(
         "--notes",
         type=str,
-        default=None,
-        help="Optional notes about the job",
+        default="",
+        help="Optional notes about the job.",
     )
-
     parser.add_argument(
         "--list-searchable",
         action="store_true",
         help="List all searchable strategies and exit",
     )
 
-    return parser.parse_args()
+    return parser
 
 
-def main():
+def _persist_results(job, results, sys_cfg, base_output_dir: Path) -> Path:
+    """Persist results and metadata similar to run_random_search."""
+    job_dir = base_output_dir / job.job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+
+    results_df = pd.DataFrame(results)
+    se._validate_results(results_df)
+
+    results_parquet_path = job_dir / "results.parquet"
+    results_csv_path = job_dir / "results.csv"
+    results_df.to_parquet(results_parquet_path, index=False)
+    results_df.to_csv(results_csv_path, index=False)
+
+    git_sha = se._get_git_sha()
+    n_success = (results_df["status"] == "ok").sum() if "status" in results_df.columns else len(results_df)
+    n_errors = (results_df["status"] == "error").sum() if "status" in results_df.columns else 0
+
+    data_cfg = sys_cfg.get("data_cfg") if sys_cfg else None
+    data_snapshot = {}
+    if data_cfg:
+        data_snapshot = {
+            "ohlcv_dir": getattr(data_cfg, "ohlcv_dir", "unknown"),
+            "lookback_days": getattr(data_cfg, "lookback_days", {}),
+        }
+
+    meta_dict = job.to_dict()
+    meta_dict["git_sha"] = git_sha
+    meta_dict["results_path_parquet"] = str(results_parquet_path.relative_to(job_dir))
+    meta_dict["results_path_csv"] = str(results_csv_path.relative_to(job_dir))
+    meta_dict["n_results"] = len(results_df)
+    meta_dict["n_success"] = int(n_success)
+    meta_dict["n_errors"] = int(n_errors)
+    meta_dict["data_snapshot"] = data_snapshot
+    meta_dict["profile"] = getattr(job, "profile", "research")
+
+    meta_path = job_dir / "meta.json"
+    meta_path.write_text(json.dumps(meta_dict, indent=2), encoding="utf-8")
+
+    return job_dir
+
+
+def main(argv=None):
     """Main entry point."""
-    args = parse_args()
+    parser = build_parser()
+    args = parser.parse_args(argv)
 
     # List searchable strategies if requested
     if args.list_searchable:
@@ -134,39 +164,25 @@ def main():
         print("=" * 60)
         return
 
-    # Validate required arguments for search
-    missing_args = []
-    if not args.strategy:
-        missing_args.append("--strategy")
-    if not args.symbol:
-        missing_args.append("--symbol")
-    if not args.timeframe:
-        missing_args.append("--timeframe")
-    if not args.n_samples:
-        missing_args.append("--n-samples")
-
-    if missing_args:
-        print(f"Error: Missing required arguments: {', '.join(missing_args)}")
-        print("\nUsage: python -m scripts.run_strategy_search --strategy STRATEGY --symbol SYMBOL --timeframe TF --n-samples N")
-        print("   Or: python -m scripts.run_strategy_search --list-searchable")
-        sys.exit(1)
-
     # Load system config
-    print(f"Loading config: {args.config}")
     sys_cfg = load_config(args.profile)
 
-    # Validate mode
-    cfg_mode = sys_cfg.get("mode", "unknown")
-    if cfg_mode != "research":
+    # Validate profile
+    cfg_profile = sys_cfg.get("profile", sys_cfg.get("mode", "unknown"))
+    if cfg_profile != "research":
         raise RuntimeError(
-            f"Strategy search must run with mode='research' config. "
-            f"Got mode='{cfg_mode}'. Use config/system.research.yml or ensure mode='research'."
+            "Strategy search must run with the 'research' profile. Use --profile research."
         )
 
+    # Determine output base dir override for tests
+    output_override = os.environ.get("STRATEGY_SEARCH_OUTPUT_DIR")
+    base_output_dir = Path(output_override) if output_override else se.BASE_OUTPUT_DIR
+    if output_override:
+        se.BASE_OUTPUT_DIR = base_output_dir
+
     # Get strategy metadata and param_space
-    strategy_name = args.strategy.lower()
     try:
-        meta = get_strategy_meta(strategy_name)
+        meta = get_strategy_meta(args.strategy)
     except ValueError as e:
         print(f"Error: {e}")
         print("\nUse --list-searchable to see available strategies.")
@@ -178,32 +194,19 @@ def main():
         print("\nUse --list-searchable to see available strategies.")
         sys.exit(1)
 
-    param_space = meta.param_space
-
-    # Create or use custom job_id
-    if args.job_id:
-        job_id = args.job_id
-    else:
-        job_id = create_job_id(
-            strategy=strategy_name,
-            symbol=args.symbol,
-            timeframe=args.timeframe,
-        )
-
-    # Create StrategySearchJob
-    job = StrategySearchJob(
-        job_id=job_id,
-        strategy=strategy_name,
+    # Build job config and job
+    job_name = f"{args.strategy}_{args.symbol}_{args.timeframe}"
+    job_config = StrategySearchJobConfig(
+        job_name=job_name,
+        strategy_name=args.strategy,
         symbol=args.symbol,
         timeframe=args.timeframe,
-        search_type="random",
+        search_type=args.search_type,
         n_samples=args.n_samples,
-        config_path=args.config,
-        created_at=datetime.utcnow(),
-        seed=args.seed,
-        mode="research",
+        random_seed=args.seed,
         notes=args.notes,
     )
+    job = job_config.to_job(profile=args.profile)
 
     # Print job info
     print("\n" + "=" * 70)
@@ -215,8 +218,7 @@ def main():
     print(f"  Timeframe:   {job.timeframe}")
     print(f"  Samples:     {job.n_samples}")
     print(f"  Search Type: {job.search_type}")
-    print(f"  Config:      {job.config_path}")
-    print(f"  Mode:        {job.mode}")
+    print(f"  Profile:     {job.profile}")
     if job.seed is not None:
         print(f"  Seed:        {job.seed}")
     if job.notes:
@@ -228,11 +230,31 @@ def main():
     print("Starting parameter search...")
     print()
 
-    job_dir = run_random_search(
-        job=job,
-        param_space=param_space,
-        sys_cfg=sys_cfg,
-    )
+    job_dir: Path
+    dry_run = os.environ.get("STRATEGY_SEARCH_DRYRUN") == "1"
+    if dry_run:
+        dummy_row = {col: None for col in se.REQUIRED_RESULT_COLUMNS}
+        dummy_row["params"] = {"_dummy": 0}
+        dummy_row["status"] = "ok"
+        dummy_row["error_message"] = None
+        results = [dummy_row]
+        job_dir = _persist_results(job, results, sys_cfg, base_output_dir)
+    elif job.search_type == "random":
+        job_dir = se.run_random_search(
+            job=job,
+            param_space=meta.param_space,
+            sys_cfg=sys_cfg,
+        )
+    elif job.search_type == "grid":
+        grid_results = se.grid_search(
+            strategy_name=job.strategy,
+            sys_cfg=sys_cfg,
+            param_space=meta.param_space,
+            grid_points=None,
+        )
+        job_dir = _persist_results(job, grid_results, sys_cfg, base_output_dir)
+    else:  # pragma: no cover - defensive
+        raise RuntimeError(f"Unsupported search_type: {job.search_type}")
 
     print()
     print("=" * 70)
@@ -243,7 +265,6 @@ def main():
     print("  Files created:")
     print(f"    - {job_dir / 'results.parquet'}")
     print(f"    - {job_dir / 'meta.json'}")
-    print(f"    - {job_dir / 'config_snapshot.yml'}")
     print()
     print("  Next steps:")
     print("    1. Analyze results:")

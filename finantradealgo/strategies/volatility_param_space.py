@@ -5,7 +5,7 @@ Defines searchable parameter ranges for strategy_search optimization.
 """
 from __future__ import annotations
 
-from finantradealgo.strategies.param_space import ParamSpace, ParamSpec
+from finantradealgo.strategies.param_space import ParamSpace, ParamSpec, validate_param_space
 
 VOLATILITY_PARAM_SPACE: ParamSpace = {
     # Range detection lookback
@@ -54,5 +54,7 @@ VOLATILITY_PARAM_SPACE: ParamSpace = {
         log=False,
     ),
 }
+
+validate_param_space(VOLATILITY_PARAM_SPACE)
 
 __all__ = ["VOLATILITY_PARAM_SPACE"]

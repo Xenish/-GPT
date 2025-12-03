@@ -1,0 +1,2 @@
+params,cum_return,sharpe,max_drawdown,win_rate,trade_count,status,error_message,start_date,end_date,runtime_sec
+"{'range_lookback': 28, 'breakout_mult': 2.121331186565042, 'vol_regime_filter': True, 'volume_confirm_mult': 1.914569510913581, 'atr_sl_mult': 1.4359381259133353, 'atr_tp_mult': 3.7800710264440003}",-0.002259289480200044,0.03177426354017086,-0.20177804266311586,,1,ok,,,,

@@ -31,12 +31,12 @@ def main() -> None:
     # Load config with profile support
     sys_cfg = load_config(args.profile)
 
-    # SAFETY: Assert research mode for backtest
-    cfg_mode = sys_cfg.get("mode", "unknown")
-    if cfg_mode != "research":
+    # SAFETY: Assert research profile for backtest
+    cfg_profile = sys_cfg.get("profile", sys_cfg.get("mode", "unknown"))
+    if cfg_profile != "research":
         raise RuntimeError(
-            f"Backtest must run with mode='research' config. Got mode='{cfg_mode}'. "
-            f"Use --config config/system.research.yml or set FT_CONFIG_PATH=config/system.research.yml"
+            f"Backtest must run with the 'research' profile. Got profile='{cfg_profile}'. "
+            f"Use --profile research"
         )
     data_cfg = sys_cfg.get("data", {})
     symbol = sys_cfg.get("symbol", "BTCUSDT")

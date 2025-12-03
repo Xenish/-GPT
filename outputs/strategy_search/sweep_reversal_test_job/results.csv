@@ -1,0 +1,2 @@
+params,cum_return,sharpe,max_drawdown,win_rate,trade_count,status,error_message,start_date,end_date,runtime_sec
+"{'max_rsi_for_long': 56.394020971776335, 'min_pullback_ratio': 0.00860052578730472, 'use_fvg_filter': True}",0.0,0.0,0.0,,0,ok,,,,

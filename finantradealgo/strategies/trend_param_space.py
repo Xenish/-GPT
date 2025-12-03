@@ -7,7 +7,7 @@ like TrendContinuationStrategy.
 
 from __future__ import annotations
 
-from finantradealgo.strategies.param_space import ParamSpace, ParamSpec
+from finantradealgo.strategies.param_space import ParamSpace, ParamSpec, validate_param_space
 
 
 TREND_PARAM_SPACE: ParamSpace = {
@@ -50,5 +50,7 @@ TREND_PARAM_SPACE: ParamSpace = {
     ),
 }
 
+
+validate_param_space(TREND_PARAM_SPACE)
 
 __all__ = ["TREND_PARAM_SPACE"]

@@ -22,6 +22,7 @@ class ParamSpec:
     low: Optional[float] = None
     high: Optional[float] = None
     log: bool = False
+    step: Optional[float] = None
     choices: Optional[Sequence[Any]] = None
 
 
@@ -48,7 +49,9 @@ def validate_param_space(space: ParamSpace) -> None:
                 raise ParamSpaceError(
                     f"Param '{name}' has invalid range: low={spec.low}, high={spec.high}"
                 )
-
+            if spec.type == "int":
+                if spec.step is not None and spec.step <= 0:
+                    raise ParamSpaceError(f"Param '{name}' step must be positive.")
         if spec.type == "categorical":
             if not spec.choices:
                 raise ParamSpaceError(

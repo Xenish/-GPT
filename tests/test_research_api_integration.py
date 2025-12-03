@@ -57,6 +57,75 @@ def test_get_nonexistent_job():
     assert response.status_code == 404
 
 
+def test_create_and_get_strategy_search_job(tmp_path, monkeypatch):
+    """Create a strategy search job via API and fetch summary."""
+    monkeypatch.setenv("STRATEGY_SEARCH_DRYRUN", "1")
+    monkeypatch.setenv("STRATEGY_SEARCH_OUTPUT_DIR", str(tmp_path / "strategy_search"))
+
+    request_data = {
+        "strategy": "rule",
+        "symbol": "BTCUSDT",
+        "timeframe": "15m",
+        "search_type": "random",
+        "n_samples": 1,
+        "seed": 123,
+        "notes": "api test",
+    }
+
+    response = client.post("/api/research/strategy-search/jobs/", json=request_data)
+    assert response.status_code == 200, response.text
+    data = response.json()
+    assert "job_id" in data
+
+    job_id = data["job_id"]
+    job_dir = Path(tmp_path / "strategy_search" / job_id)
+    assert job_dir.exists()
+
+    status_resp = client.get(f"/api/research/strategy-search/jobs/{job_id}")
+    assert status_resp.status_code == 200
+    status = status_resp.json()
+    assert status["job_id"] == job_id
+    assert status["strategy"] == "rule"
+    assert status["symbol"] == "BTCUSDT"
+    assert status["timeframe"] == "15m"
+    assert status["results_available"] is True
+
+    report_resp = client.get(f"/api/research/strategy-search/jobs/{job_id}/report?format=markdown")
+    assert report_resp.status_code == 200
+    report_data = report_resp.json()
+    assert report_data["format"] == "markdown"
+    assert "Strategy Search Report" in report_data["content"]
+
+
+def test_search_rejects_non_research_profile(monkeypatch):
+    """API should refuse to run when config profile is not research."""
+    from services import research_service
+    from services.research_service import jobs_api
+
+    class DummyResearchCfg:
+        max_parallel_jobs = 1
+
+    def fake_load_config(profile: str):
+        return {
+            "profile": "live",
+            "research_cfg": DummyResearchCfg(),
+        }
+
+    monkeypatch.setattr(jobs_api, "load_config", fake_load_config)
+
+    request_data = {
+        "strategy": "rule",
+        "symbol": "BTCUSDT",
+        "timeframe": "15m",
+        "search_type": "random",
+        "n_samples": 1,
+    }
+
+    response = client.post("/api/research/strategy-search/jobs/", json=request_data)
+    assert response.status_code == 400
+    assert "research" in response.json()["detail"]
+
+
 # NOTE: Full job execution tests are skipped in CI
 # as they require full data + long runtime
 

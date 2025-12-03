@@ -65,6 +65,9 @@ def evaluate_strategy_once(
     )
     metrics = result.get("metrics", {}) or {}
     win_rate = _compute_win_rate(result.get("trades"))
+    meta_fields = {}
+    for key in ("start_date", "end_date", "runtime_sec"):
+        meta_fields[key] = result.get(key)
 
     return {
         "params": dict(params or {}),
@@ -73,6 +76,7 @@ def evaluate_strategy_once(
         "max_drawdown": metrics.get("max_drawdown"),
         "win_rate": win_rate,
         "trade_count": metrics.get("trade_count"),
+        **meta_fields,
     }
 
 
@@ -113,28 +117,39 @@ def random_search(
         raise ValueError(f"Strategy '{strategy_name}' has no ParamSpace defined.")
 
     results: List[Dict[str, Any]] = []
+
+    def _base_row() -> Dict[str, Any]:
+        return {
+            "params": None,
+            "cum_return": None,
+            "sharpe": None,
+            "max_drawdown": None,
+            "win_rate": None,
+            "trade_count": None,
+            "status": None,
+            "error_message": None,
+            "start_date": None,
+            "end_date": None,
+            "runtime_sec": None,
+        }
+
     for i in range(n_samples):
         params = sample_params(space)
 
+        row = _base_row()
+        row["params"] = params
+
         # Error handling: wrap evaluation in try/except
         try:
-            result = evaluate_strategy_once(strategy_name, params=params, sys_cfg=cfg)
-            result["status"] = "ok"
-            result["error_message"] = None
+            eval_result = evaluate_strategy_once(strategy_name, params=params, sys_cfg=cfg)
+            row.update(eval_result)
+            row["status"] = "ok"
+            row["error_message"] = None
         except Exception as e:
-            # On error, create failed result with NaN metrics
-            result = {
-                "params": params,
-                "cum_return": None,
-                "sharpe": None,
-                "max_drawdown": None,
-                "win_rate": None,
-                "trade_count": None,
-                "status": "error",
-                "error_message": str(e)[:120],  # Truncate to 120 chars
-            }
+            row["status"] = "error"
+            row["error_message"] = str(e)[:120]  # Truncate to 120 chars
 
-        results.append(result)
+        results.append(row)
 
     return results
 
@@ -168,7 +183,7 @@ def grid_search(
     cfg = sys_cfg or load_config("research")
     space = param_space or getattr(get_strategy_meta(strategy_name), "param_space", None)
     if not space:
-        raise ValueError(f"Strategy '{strategy_name}' has no ParamSpace defined.")
+        raise ValueError(f"Strategy '{strategy_name}' has no ParamSpace defined for grid search.")
 
     # Generate grid for each parameter
     param_grids: Dict[str, List[Any]] = {}
@@ -206,9 +221,36 @@ def grid_search(
     total_combos = len(combinations)
     print(f"Grid search: {total_combos} combinations to evaluate")
 
+    def _base_row() -> Dict[str, Any]:
+        return {
+            "params": None,
+            "cum_return": None,
+            "sharpe": None,
+            "max_drawdown": None,
+            "win_rate": None,
+            "trade_count": None,
+            "status": None,
+            "error_message": None,
+            "start_date": None,
+            "end_date": None,
+            "runtime_sec": None,
+        }
+
     for combo in combinations:
         params = dict(zip(param_names, combo))
-        results.append(evaluate_strategy_once(strategy_name, params=params, sys_cfg=cfg))
+        row = _base_row()
+        row["params"] = params
+
+        try:
+            eval_result = evaluate_strategy_once(strategy_name, params=params, sys_cfg=cfg)
+            row.update(eval_result)
+            row["status"] = "ok"
+            row["error_message"] = None
+        except Exception as e:
+            row["status"] = "error"
+            row["error_message"] = str(e)[:120]
+
+        results.append(row)
 
     return results
 
@@ -287,6 +329,9 @@ def run_random_search(
     Raises:
         ValueError: If results validation fails
     """
+    if job.search_type != "random":
+        raise ValueError("run_random_search supports only search_type='random' in RC2 V1.")
+
     # Run the search with seed
     results = random_search(
         strategy_name=job.strategy,

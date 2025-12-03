@@ -7,7 +7,7 @@ like SweepReversalStrategy.
 
 from __future__ import annotations
 
-from finantradealgo.strategies.param_space import ParamSpace, ParamSpec
+from finantradealgo.strategies.param_space import ParamSpace, ParamSpec, validate_param_space
 
 
 SWEEP_PARAM_SPACE: ParamSpace = {
@@ -32,5 +32,7 @@ SWEEP_PARAM_SPACE: ParamSpace = {
     ),
 }
 
+
+validate_param_space(SWEEP_PARAM_SPACE)
 
 __all__ = ["SWEEP_PARAM_SPACE"]

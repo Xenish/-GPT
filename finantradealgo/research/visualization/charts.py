@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
@@ -413,10 +414,13 @@ def save_chart(
         filename: Output filename
         format: Output format ('html', 'png', 'svg', 'pdf')
     """
+    path = Path(filename)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
     if format == "html":
-        fig.write_html(filename)
+        fig.write_html(str(path))
     elif format in ["png", "svg", "pdf"]:
-        fig.write_image(filename, format=format)
+        fig.write_image(str(path), format=format)
     else:
         raise ValueError(f"Unsupported format: {format}")
 

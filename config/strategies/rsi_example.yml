@@ -1,0 +1,6 @@
+name: "example_rsi"
+class_path: "finantradealgo.strategies.rsi.RSIStrategy"
+params:
+  rsi_length: 14
+  overbought: 70
+  oversold: 30

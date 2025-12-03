@@ -1,0 +1,21 @@
+{
+  "job_id": "rule_test_job",
+  "strategy": "rule",
+  "symbol": "BTCUSDT",
+  "timeframe": "15m",
+  "search_type": "random",
+  "n_samples": 1,
+  "profile": "research",
+  "created_at": "2025-01-01T00:00:00+00:00",
+  "notes": null,
+  "seed": null,
+  "mode": "research",
+  "config_snapshot_relpath": null,
+  "git_sha": "f23eb5dc",
+  "results_path_parquet": "results.parquet",
+  "results_path_csv": "results.csv",
+  "n_results": 1,
+  "n_success": 1,
+  "n_errors": 0,
+  "data_snapshot": {}
+}

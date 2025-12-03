@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
@@ -38,8 +38,8 @@ class ReportSection:
     """
 
     title: str
-    content: str = ""
-    subsections: List[ReportSection] = field(default_factory=list)
+    content: Optional[str] = ""
+    subsections: List["ReportSection"] = field(default_factory=list)
     data: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
 
@@ -69,7 +69,11 @@ class ReportSection:
             for key, value in self.data.items():
                 if isinstance(value, pd.DataFrame):
                     lines.append(f"**{key}**:\n")
-                    lines.append(value.to_markdown())
+                    try:
+                        lines.append(value.to_markdown())
+                    except ImportError:
+                        # tabulate may be missing; fall back to plain text
+                        lines.append(value.to_string(index=False))
                     lines.append("")
                 elif isinstance(value, dict):
                     lines.append(f"**{key}**:\n")
@@ -124,6 +128,28 @@ class ReportSection:
 
         return "\n".join(lines)
 
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize section to dictionary (JSON-friendly)."""
+        return {
+            "title": self.title,
+            "content": self.content,
+            "data": self.data,
+            "metadata": self.metadata,
+            "subsections": [s.to_dict() for s in self.subsections],
+        }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "ReportSection":
+        """Deserialize section from dictionary."""
+        subsections = [cls.from_dict(s) for s in data.get("subsections", []) or []]
+        return cls(
+            title=data["title"],
+            content=data.get("content"),
+            data=data.get("data"),
+            metadata=data.get("metadata"),
+            subsections=subsections,
+        )
+
 
 @dataclass
 class Report:
@@ -140,7 +166,7 @@ class Report:
 
     title: str
     description: str = ""
-    created_at: datetime = field(default_factory=datetime.utcnow)
+    created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     sections: List[ReportSection] = field(default_factory=list)
     metadata: Optional[Dict[str, Any]] = None
 
@@ -271,21 +297,34 @@ class Report:
         Returns:
             Dictionary representation of report
         """
+        return self.to_dict()
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize report to dictionary (JSON-friendly)."""
         return {
             "title": self.title,
             "description": self.description,
             "created_at": self.created_at.isoformat(),
-            "sections": [
-                {
-                    "title": section.title,
-                    "content": section.content,
-                    "data": section.data,
-                    "metadata": section.metadata,
-                }
-                for section in self.sections
-            ],
+            "sections": [section.to_dict() for section in self.sections],
             "metadata": self.metadata,
         }
+
+    @classmethod
+    def from_dict(cls, data: Dict[str, Any]) -> "Report":
+        """Deserialize report from dictionary."""
+        created_at_raw = data.get("created_at")
+        if isinstance(created_at_raw, str):
+            created_at = datetime.fromisoformat(created_at_raw)
+        else:
+            created_at = created_at_raw or datetime.now(timezone.utc)
+        sections = [ReportSection.from_dict(s) for s in data.get("sections", []) or []]
+        return cls(
+            title=data["title"],
+            description=data.get("description", ""),
+            created_at=created_at,
+            sections=sections,
+            metadata=data.get("metadata"),
+        )
 
     def save(self, output_path: Path, format: ReportFormat = ReportFormat.HTML) -> None:
         """
@@ -361,3 +400,11 @@ class ReportGenerator(ABC):
         report = self.generate(**kwargs)
         report.save(output_path, format)
         return report
+
+
+__all__ = [
+    "Report",
+    "ReportSection",
+    "ReportFormat",
+    "ReportGenerator",
+]

@@ -23,9 +23,21 @@ def test_build_warehouse_writer_timescale_requires_dsn(monkeypatch):
         build_warehouse_writer(cfg)
 
     pytest.importorskip("psycopg2")
+
+    # Avoid real DB connection by stubbing TimescaleWarehouse
+    created = {}
+
+    class DummyTimescaleWarehouse:
+        def __init__(self, dsn, table_map=None, batch_size=None):
+            created["dsn"] = dsn
+            created["table_map"] = table_map
+            created["batch_size"] = batch_size
+
+    monkeypatch.setattr("finantradealgo.data_engine.ingestion.writer.TimescaleWarehouse", DummyTimescaleWarehouse)
     monkeypatch.setenv("TEST_DSN_ENV", "postgres://user:pass@localhost:5432/db")
     writer = build_warehouse_writer(cfg)
-    assert isinstance(writer, TimescaleWarehouse)
+    assert isinstance(writer, DummyTimescaleWarehouse)
+    assert created["dsn"].startswith("postgres://")
 
 
 def test_build_warehouse_writer_invalid_backend():

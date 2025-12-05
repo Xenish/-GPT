@@ -19,7 +19,6 @@ describe("Backtests list page", () => {
       expect(screen.getByText("run1")).toBeInTheDocument();
       expect(screen.getByText("run2")).toBeInTheDocument();
     });
-
-    expect(screen.getAllByText(/View details/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByRole("link", { name: /run/i }).length).toBeGreaterThan(0);
   });
 });

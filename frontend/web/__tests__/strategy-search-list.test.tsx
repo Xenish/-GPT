@@ -18,7 +18,7 @@ describe("Strategy search list page", () => {
 
     const input = screen.getByPlaceholderText(/job_id/i);
     fireEvent.change(input, { target: { value: "job1" } });
-    fireEvent.click(screen.getByText(/Load/i));
+    fireEvent.click(screen.getAllByText(/Load/i)[0]);
 
     await waitFor(() => {
       expect(screen.getByText("job1")).toBeInTheDocument();

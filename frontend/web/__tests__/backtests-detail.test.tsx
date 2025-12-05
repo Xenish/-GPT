@@ -2,6 +2,10 @@ import { render, screen, waitFor } from "@testing-library/react";
 import React from "react";
 import BacktestDetailPage from "@/app/backtests/[jobId]/page";
 
+jest.mock("next/navigation", () => ({
+  useSearchParams: () => new URLSearchParams(),
+}));
+
 jest.mock("@/lib/api", () => ({
   fetchBacktestReport: jest.fn().mockResolvedValue({
     title: "Backtest report",
@@ -17,10 +21,11 @@ jest.mock("@/lib/api", () => ({
 }));
 
 // Mock fetch for CSV download in component
-global.fetch = vi.fn().mockResolvedValue({
+const mockFetch = jest.fn().mockResolvedValue({
   ok: true,
   text: () => Promise.resolve("id,pnl\n1,10"),
-}) as any;
+});
+(global as any).fetch = mockFetch;
 
 describe("Backtest detail page", () => {
   it("renders metrics and trades", async () => {

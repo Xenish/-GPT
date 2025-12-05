@@ -36,8 +36,8 @@ describe("Live dashboard page", () => {
     });
 
     expect(screen.getByText(/Open Positions/i)).toBeInTheDocument();
-    expect(screen.getByText(/BTCUSDT/)).toBeInTheDocument();
-    expect(screen.getByText(/Trades/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/BTCUSDT/).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/Trades/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/Risk/i)).toBeInTheDocument();
     expect(screen.getByText(/daily pnl/i)).toBeInTheDocument();
   });

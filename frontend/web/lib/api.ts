@@ -13,6 +13,34 @@ const api = axios.create({
   baseURL: `${apiBase}/api`,
 });
 
+export type Metrics = Record<string, number | string | null | undefined>;
+
+export type ReportSection = {
+  title: string;
+  content?: string | null;
+  metrics?: Metrics;
+  artifacts?: Record<string, string>;
+  data?: Record<string, any> | null;
+  metadata?: Record<string, any> | null;
+  subsections?: ReportSection[];
+};
+
+export type Report = {
+  title: string;
+  description?: string;
+  job_id?: string | null;
+  run_id?: string | null;
+  profile?: string | null;
+  strategy_id?: string | null;
+  symbol?: string | null;
+  timeframe?: string | null;
+  metrics?: Metrics;
+  artifacts?: Record<string, string>;
+  created_at?: string;
+  sections?: ReportSection[];
+  metadata?: Record<string, any> | null;
+};
+
 export async function fetchChart(
   symbol: string,
   timeframe: string,
@@ -152,12 +180,6 @@ export async function getPortfolioEquity(
   return res.data;
 }
 
-export async function getLiveStatus(runId?: string) {
-  const params = runId ? { run_id: runId } : undefined;
-  const res = await api.get(`/live/status`, { params });
-  return res.data;
-}
-
 export async function sendLiveControl(body: { command: string; run_id?: string }) {
   const res = await api.post(`/live/control`, body);
   return res.data;
@@ -204,4 +226,35 @@ export async function getFeatureImportance(modelId: string) {
     name,
     value,
   }));
+}
+
+// Report fetchers (unified contract)
+export async function fetchBacktestReport(jobId: string, format: "json" | "html" | "markdown" = "json"): Promise<Report> {
+  const res = await api.get(`/research/reports/backtests/${jobId}/report`, { params: { format } });
+  const payload = res.data?.content ?? res.data;
+  return format === "json" ? (payload as Report) : { title: "Backtest Report", description: "", sections: [], ...payload };
+}
+
+export async function fetchStrategySearchReport(jobId: string, format: "json" | "html" | "markdown" = "json"): Promise<Report> {
+  const res = await api.post(`/research/reports/strategy-search`, { job_id: jobId, format });
+  const payload = res.data?.content ?? res.data;
+  return format === "json" ? (payload as Report) : { title: "Strategy Search Report", description: "", sections: [], ...payload };
+}
+
+export async function fetchLiveReport(format: "json" | "html" | "markdown" = "json", runId?: string): Promise<Report> {
+  const params = { format, run_id: runId };
+  const res = await api.get(`/research/performance/live/report`, { params });
+  const payload = res.data?.content ?? res.data;
+  return format === "json" ? (payload as Report) : { title: "Live Report", description: "", sections: [], ...payload };
+}
+
+// Optional helpers for portfolio/montecarlo extended reports
+export async function fetchPortfolioMetrics() {
+  const res = await api.get(`/portfolio/backtests`);
+  return res.data;
+}
+
+export async function fetchMonteCarlo(body: any) {
+  const res = await api.post(`/montecarlo/run`, body);
+  return res.data;
 }

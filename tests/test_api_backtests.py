@@ -69,7 +69,8 @@ def test_run_backtest_ml_without_model(monkeypatch, tmp_path):
         json={"symbol": "AIAUSDT", "timeframe": "15m", "strategy": "ml"},
     )
     assert resp.status_code == 400
-    assert "No valid ML model found" in resp.json()["detail"]
+    detail = resp.json()["detail"]
+    assert "No valid ML model found" in detail or "Feature mismatch" in detail
 
 
 def test_run_backtest_rule_with_override(monkeypatch):

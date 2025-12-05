@@ -13,6 +13,9 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
+from finantradealgo.research.reporting import LiveReportGenerator
+from finantradealgo.system.config_loader import load_config
+
 router = APIRouter()
 
 
@@ -492,3 +495,62 @@ async def list_tracked_strategies():
             status_code=500,
             detail=f"Failed to list strategies: {str(e)}"
         )
+
+
+def _resolve_live_snapshot_path(run_id: str | None) -> Path:
+    cfg = load_config("research")
+    live_cfg = cfg.get("live", {}) or {}
+    live_dir = Path(live_cfg.get("state_dir", "outputs/live"))
+    latest_path = live_cfg.get("latest_state_path") or live_cfg.get("state_path") or live_dir / "live_state.json"
+    if run_id:
+        return Path(live_cfg.get("state_path") or live_dir / f"live_state_{run_id}.json")
+    return Path(latest_path)
+
+
+def _resolve_live_trades_path(run_id: str | None) -> Optional[Path]:
+    cfg = load_config("research")
+    live_cfg = cfg.get("live", {}) or {}
+    live_dir = Path(live_cfg.get("state_dir", "outputs/live"))
+    trades_override = live_cfg.get("trades_path")
+    if trades_override:
+        return Path(trades_override)
+    if run_id:
+        path = live_dir / f"trades_{run_id}.csv"
+        if path.exists():
+            return path
+    default_path = live_dir / "trades_latest.csv"
+    return default_path if default_path.exists() else None
+
+
+@router.get("/live/report")
+async def live_report(format: str = "html", run_id: Optional[str] = None):
+    """
+    Generate live performance/health report from latest snapshot and recent trades.
+    """
+    snapshot_path = _resolve_live_snapshot_path(run_id)
+    if not snapshot_path.exists():
+        raise HTTPException(status_code=404, detail=f"Live snapshot not found: {snapshot_path}")
+
+    trades_path = _resolve_live_trades_path(run_id)
+
+    try:
+        generator = LiveReportGenerator()
+        report = generator.generate(
+            snapshot=snapshot_path,
+            trades=trades_path if trades_path else None,
+            snapshot_path=snapshot_path,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    fmt = format.lower()
+    if fmt in ("markdown", "md"):
+        content = report.to_markdown()
+        return {"run_id": run_id or report.run_id, "format": "markdown", "content": content}
+    if fmt == "json":
+        return {"run_id": run_id or report.run_id, "format": "json", "content": report.to_dict()}
+
+    content = report.to_html()
+    return {"run_id": run_id or report.run_id, "format": "html", "content": content}

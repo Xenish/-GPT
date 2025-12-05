@@ -2,9 +2,9 @@
 Unified ingestion entrypoint for historical backfill, live WS ingest, and gap repair.
 
 Examples:
-    python scripts/ingest_marketdata.py historical --config config/system.research.yml --symbols BTCUSDT --timeframes 1m 15m --lookback-days 30
-    python scripts/ingest_marketdata.py live --config config/system.live.yml --symbols BTCUSDT --max-messages 500
-    python scripts/ingest_marketdata.py repair-gaps --config config/system.research.yml --symbols BTCUSDT --timeframes 15m --lookback-hours 12
+    FINANTRADE_PROFILE=research python scripts/ingest_marketdata.py historical --symbols BTCUSDT --timeframes 1m 15m --lookback-days 30
+    FINANTRADE_PROFILE=live python scripts/ingest_marketdata.py live --symbols BTCUSDT --max-messages 500
+    FINANTRADE_PROFILE=research python scripts/ingest_marketdata.py repair-gaps --symbols BTCUSDT --timeframes 15m --lookback-hours 12
 """
 
 from __future__ import annotations
@@ -23,10 +23,15 @@ from finantradealgo.data_engine.ingestion.ohlcv import (
     LiveOHLCVIngestor,
     timeframe_to_seconds,
 )
-from finantradealgo.data_engine.ingestion.writer import TimescaleWarehouse
+from finantradealgo.data_engine.ingestion.writer import (
+    TimescaleWarehouse,
+    NullWarehouse,
+    build_warehouse_writer,
+)
 from finantradealgo.system.config_loader import (
     WarehouseConfig,
     load_config,
+    load_config_from_env,
     load_exchange_credentials,
 )
 from finantradealgo.data_engine.binance_ws_source import BinanceWsDataSource
@@ -55,31 +60,17 @@ def _resolve_timeframes(cfg: dict, cli_timeframes: Iterable[str] | None) -> list
     return [str(tf)] if tf else []
 
 
-def _build_warehouse(cfg: dict) -> TimescaleWarehouse:
-    wh_cfg: WarehouseConfig = cfg["warehouse_cfg"]
-    dsn = wh_cfg.get_dsn()
-    table_map = {
-        "ohlcv": wh_cfg.ohlcv_table,
-        "funding": wh_cfg.funding_table,
-        "open_interest": wh_cfg.open_interest_table,
-        "flow": wh_cfg.flow_table,
-        "sentiment": wh_cfg.sentiment_table,
-    }
-    return TimescaleWarehouse(dsn, table_map=table_map, batch_size=wh_cfg.live_batch_size)
+def _build_warehouse(cfg: dict):
+    return build_warehouse_writer(cfg)
 
 
 @click.group()
-@click.option("--profile", default="research", type=click.Choice(["research", "live"]), help="Config profile to load.")
-@click.option("--config", default=None, help="Explicit config path (overrides profile).")
+@click.option("--profile", default=None, type=click.Choice(["research", "live"]), help="Config profile to load (defaults to FINANTRADE_PROFILE or research).")
 @click.pass_context
-def cli(ctx: click.Context, profile: str, config: str | None):
+def cli(ctx: click.Context, profile: str | None):
     # Ensure optional FCM env placeholder is satisfied for config parsing
     os.environ.setdefault("FCM_SERVER_KEY", "dummy_ingest_key")
-    if config:
-        raise RuntimeError(
-            "Explicit config path is no longer supported. Use load_config(profile=...) with system.research.yml or system.live.yml."
-        )
-    cfg = load_config(profile)
+    cfg = load_config(profile) if profile else load_config_from_env()
     ctx.ensure_object(dict)
     ctx.obj["cfg"] = cfg
     ctx.obj["warehouse"] = _build_warehouse(cfg)
@@ -97,7 +88,7 @@ def cli(ctx: click.Context, profile: str, config: str | None):
 @click.pass_context
 def historical(ctx: click.Context, symbols, timeframes, start, end, lookback_days: int):
     cfg = ctx.obj["cfg"]
-    warehouse: TimescaleWarehouse = ctx.obj["warehouse"]
+    warehouse = ctx.obj["warehouse"]
     source: BinanceRESTCandleSource = ctx.obj["rest_source"]
     ingestor = HistoricalOHLCVIngestor(source, warehouse)
 
@@ -123,7 +114,7 @@ def historical(ctx: click.Context, symbols, timeframes, start, end, lookback_day
 @click.pass_context
 def repair_gaps(ctx: click.Context, symbols, timeframes, lookback_hours: int):
     cfg = ctx.obj["cfg"]
-    warehouse: TimescaleWarehouse = ctx.obj["warehouse"]
+    warehouse = ctx.obj["warehouse"]
     source: BinanceRESTCandleSource = ctx.obj["rest_source"]
     ingestor = HistoricalOHLCVIngestor(source, warehouse)
 
@@ -141,7 +132,7 @@ def repair_gaps(ctx: click.Context, symbols, timeframes, lookback_hours: int):
 @click.pass_context
 def live(ctx: click.Context, symbols, max_messages: int | None):
     cfg = ctx.obj["cfg"]
-    warehouse: TimescaleWarehouse = ctx.obj["warehouse"]
+    warehouse = ctx.obj["warehouse"]
     rest_source: BinanceRESTCandleSource = ctx.obj["rest_source"]
     live_cfg = cfg["live_cfg"]
     symbols_list = _resolve_symbols(cfg, symbols)

@@ -68,7 +68,7 @@ def test_list_strategies_with_searchable_only():
 def test_get_strategy_meta():
     """get_strategy_meta should return correct meta."""
     meta = get_strategy_meta("rule")
-    assert meta.name == "rule_signals"
+    assert meta.name == "rule"
     assert meta.family == "rule"
 
 

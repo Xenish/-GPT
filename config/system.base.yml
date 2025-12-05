@@ -84,6 +84,9 @@ risk:
   capital_risk_pct_per_trade: 0.01
   max_leverage: 5.0
   max_notional_per_symbol: 2000.0
+  max_open_trades: 5
+  pyramiding_limit: 1
+  leverage_ceiling: 5.0
   max_daily_loss_pct: 0.03
   daily_loss_lookback_days: 1
   min_hold_bars: 2
@@ -126,6 +129,9 @@ rule:
 # ============================================================================
 ml:
   enabled: true
+  proba_column: "ml_long_proba"
+  signal_column: "ml_long_signal"
+  model_dir: "outputs/ml_models"
   targets:
     # ML training is computationally expensive - limit to specific symbol/timeframe combos
     # If empty, defaults to first symbol/timeframe from data.symbols/data.timeframes
@@ -148,7 +154,7 @@ ml:
     min_samples_leaf: 50
     random_state: 42
   backtest:
-    proba_column: "ml_proba_long"
+    proba_column: "ml_long_proba"
     proba_threshold: 0.55
     proba_exit_threshold: 0.50
     warmup_bars: 200
@@ -217,8 +223,8 @@ portfolio:
 # WAREHOUSE / STATE
 # ========================================================================
 warehouse:
-  backend: timescale
-  dsn_env: FT_TIMESCALE_DSN
+  backend: none
+  dsn_env: FT_WAREHOUSE_DSN
   ohlcv_table: raw_ohlcv
   funding_table: raw_funding_rates
   open_interest_table: raw_open_interest

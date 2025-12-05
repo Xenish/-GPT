@@ -33,7 +33,9 @@ class FeatureSink:
                 import duckdb  # type: ignore
             except Exception as exc:  # pragma: no cover
                 raise RuntimeError("duckdb package required for duckdb sink") from exc
-            self._duckdb = duckdb.connect(str(cfg.duckdb_path or "features.duckdb"))
+            db_path = Path(cfg.duckdb_path or "features.duckdb")
+            db_path.parent.mkdir(parents=True, exist_ok=True)
+            self._duckdb = duckdb.connect(str(db_path))
 
     def write(
         self,
@@ -63,16 +65,15 @@ class FeatureSink:
         if self.cfg.kind == "duckdb":
             assert self._duckdb is not None
             table = f"{self.cfg.duckdb_table}_{timeframe}"
+            self._duckdb.register("df_temp", df)
             self._duckdb.execute(f"""
                 CREATE TABLE IF NOT EXISTS {table} AS
-                SELECT * FROM df LIMIT 0;
+                SELECT * FROM df_temp WHERE 1=0;
             """)
-            if mode == "append":
-                self._duckdb.execute(f"DELETE FROM {table} WHERE symbol = ?;", [symbol])
-            else:
-                self._duckdb.execute(f"DELETE FROM {table} WHERE symbol = ?;", [symbol])
-            self._duckdb.register("df", df)
-            self._duckdb.execute(f"INSERT INTO {table} SELECT * FROM df;")
+            # Overwrite/append semantics: remove existing rows for symbol, then insert
+            self._duckdb.execute(f"DELETE FROM {table} WHERE symbol = ?;", [symbol])
+            self._duckdb.execute(f"INSERT INTO {table} SELECT * FROM df_temp;")
+            self._duckdb.unregister("df_temp")
             return f"{self.cfg.duckdb_path or 'features.duckdb'}::{table}"
 
         raise ValueError(f"Unknown sink kind: {self.cfg.kind}")

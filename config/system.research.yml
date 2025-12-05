@@ -81,6 +81,13 @@ data:
   backend_params: {}
   ohlcv_dir: "data/ohlcv"
   ohlcv_path_template: "data/ohlcv/{symbol}_{timeframe}.csv"
+  backend: "csv"
+  backend_params: {}
+
+# Warehouse defaults to none for research (CSV/duckdb workflows)
+warehouse:
+  backend: "none"
+  dsn_env: "FT_WAREHOUSE_DSN"
 
 # ============================================================================
 # RESEARCH - Strategy Search & Scenario Configuration

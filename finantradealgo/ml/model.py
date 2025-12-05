@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 import os
 import sys
+import hashlib
+import random
 from dataclasses import asdict, dataclass, field
 from datetime import datetime, UTC
 from pathlib import Path
@@ -31,6 +33,15 @@ except ImportError:  # pragma: no cover
 
 @dataclass
 class SklearnModelConfig:
+    """
+    Configuration for sklearn-based models.
+
+    Attributes:
+        model_type: Identifier for estimator ("gradient_boosting", "random_forest", "logreg", "xgboost")
+        params: Estimator hyperparameters
+        random_state: Seed propagated to estimators for determinism
+    """
+
     model_type: str = "gradient_boosting"
     params: Dict[str, Any] = field(default_factory=dict)
     random_state: int = 42
@@ -72,6 +83,9 @@ class ModelMetadata:
     sklearn_version: str = ""
     pandas_version: str = ""
     feature_importances: Optional[Dict[str, float]] = None
+    feature_schema_hash: Optional[str] = None
+    seed: Optional[int] = None
+    config_snapshot: Optional[Dict[str, Any]] = None
 
 
 class SklearnLongModel:
@@ -199,6 +213,22 @@ class SklearnLongModel:
         return obj
 
 
+def set_global_seed(seed: int) -> None:
+    """
+    Set Python and numpy RNG seeds for reproducibility.
+    """
+    random.seed(seed)
+    np.random.seed(seed)
+
+
+def compute_feature_schema_hash(feature_cols: List[str]) -> str:
+    """
+    Compute a deterministic hash for a set of feature columns.
+    """
+    normalized = ",".join(sorted(feature_cols))
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
 def save_sklearn_model(
     model: Any,
     *,
@@ -213,6 +243,8 @@ def save_sklearn_model(
     metrics: Dict[str, float],
     base_dir: str = "outputs/ml_models",
     pipeline_version: str = "unknown",
+    seed: Optional[int] = None,
+    config_snapshot: Optional[Dict[str, Any]] = None,
 ) -> ModelMetadata:
     os.makedirs(base_dir, exist_ok=True)
 
@@ -245,6 +277,8 @@ def save_sklearn_model(
                     for name, val in zip(feature_cols, arr)
                 }
 
+    feature_schema_hash = compute_feature_schema_hash(feature_cols)
+
     meta = ModelMetadata(
         model_id=model_id,
         symbol=symbol,
@@ -259,6 +293,7 @@ def save_sklearn_model(
         train_end=str(pd.to_datetime(train_end)),
         metrics=metrics,
         random_state=getattr(model_cfg, "random_state", None),
+        seed=seed,
         python_version=sys.version,
         sklearn_version=sklearn.__version__,
         pandas_version=pd.__version__,
@@ -266,6 +301,8 @@ def save_sklearn_model(
         metrics_path=metrics_path,
         meta_path=meta_path,
         feature_importances=feature_importances,
+        feature_schema_hash=feature_schema_hash,
+        config_snapshot=config_snapshot,
     )
 
     with open(meta_path, "w", encoding="utf-8") as f:

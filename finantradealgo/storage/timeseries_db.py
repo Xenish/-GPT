@@ -2,11 +2,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Any, Iterable, Mapping, Sequence
+from typing import Any, Iterable, Mapping, Sequence, Optional
 
 import logging
 
 import pandas as pd
+
+from finantradealgo.system.config_loader import WarehouseConfig
 
 logger = logging.getLogger(__name__)
 
@@ -103,7 +105,7 @@ class TimeSeriesDBClient:
         self,
         symbol: str,
         timeframe: str,
-        start_ts: Any,
+        start_ts: Any | None = None,
         end_ts: Any | None = None,
         limit: int | None = None,
     ) -> pd.DataFrame:
@@ -156,6 +158,34 @@ class TimeSeriesDBClient:
             end_ts=end_ts,
             tags=tags or {},
         )
+
+
+def build_timeseries_client_from_warehouse(cfg: WarehouseConfig, allow_missing_dsn: bool = True) -> TimeSeriesDBClient:
+    """
+    Helper to create a TimeSeriesDBClient from WarehouseConfig.
+
+    - backend 'none' returns a mock client.
+    - backend 'duckdb' returns a mock for now (can be extended).
+    - backend 'timescale'/'postgres' expects a DSN from env.
+    """
+    backend = cfg.backend.lower()
+    if backend in ("none", "csv", "duckdb"):
+        ts_cfg = TimeSeriesDBConfig(backend=TimeSeriesBackend.MOCK)
+        return TimeSeriesDBClient(ts_cfg)
+
+    if backend in ("timescale", "postgres"):
+        dsn = cfg.get_dsn(allow_missing=allow_missing_dsn)
+        if not dsn:
+            raise RuntimeError(f"Warehouse backend '{backend}' requires DSN env {cfg.dsn_env}")
+        ts_cfg = TimeSeriesDBConfig(
+            backend=TimeSeriesBackend.TIMESCALE,
+            dsn=dsn,
+            ohlcv_table=cfg.ohlcv_table,
+            metrics_table="metrics",
+        )
+        return TimeSeriesDBClient(ts_cfg)
+
+    raise ValueError(f"Unsupported warehouse backend for timeseries client: {backend}")
 
 
 class _TimescaleBackend:
@@ -227,14 +257,16 @@ class _TimescaleBackend:
         self,
         symbol: str,
         timeframe: str,
-        start_ts: Any,
+        start_ts: Any | None = None,
         end_ts: Any | None = None,
         limit: int | None = None,
     ) -> pd.DataFrame:
         table = self.config.ohlcv_table
-        params: list[Any] = [symbol, timeframe, start_ts]
-        where = "symbol = %s AND timeframe = %s AND ts >= %s"
-
+        params: list[Any] = [symbol, timeframe]
+        where = "symbol = %s AND timeframe = %s"
+        if start_ts is not None:
+            where += " AND ts >= %s"
+            params.append(start_ts)
         if end_ts is not None:
             where += " AND ts < %s"
             params.append(end_ts)

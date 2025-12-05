@@ -232,10 +232,16 @@ class DuckDBBackend(DataBackend):
 
 def build_backend(data_cfg) -> DataBackend:
     """
-    Factory that returns the backend specified in DataConfig.
+    Factory that returns the backend specified in DataConfig or WarehouseConfig.
+
+    Priority:
+    - data_cfg.backend controls the choice.
+    - DSN for DB backends is sourced from backend_params or WarehouseConfig if present.
     """
     backend = getattr(data_cfg, "backend", "csv") or "csv"
     params = getattr(data_cfg, "backend_params", {}) or {}
+    warehouse_cfg = getattr(data_cfg, "warehouse_cfg", None)
+
     if backend == "csv":
         return CsvBackend(
             ohlcv_path_template=data_cfg.ohlcv_path_template,
@@ -245,7 +251,13 @@ def build_backend(data_cfg) -> DataBackend:
         )
     if backend in ("timescale", "postgres"):
         dsn = params.get("dsn")
+        if not dsn and warehouse_cfg is not None:
+            try:
+                dsn = warehouse_cfg.get_dsn(allow_missing=False)
+            except Exception:
+                dsn = warehouse_cfg.get_dsn(allow_missing=True)
         if not dsn:
+            # In environments without DB creds, allow caller to handle.
             raise ValueError("DataConfig.backend_params.dsn must be set for timescale/postgres backend.")
         table_map = {
             "ohlcv": params.get("ohlcv_table", "raw_ohlcv"),

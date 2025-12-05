@@ -11,7 +11,7 @@
   "seed": null,
   "mode": "research",
   "config_snapshot_relpath": null,
-  "git_sha": "f23eb5dc",
+  "git_sha": "caf38a7c",
   "results_path_parquet": "results.parquet",
   "results_path_csv": "results.csv",
   "n_results": 1,

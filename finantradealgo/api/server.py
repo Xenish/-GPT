@@ -99,15 +99,23 @@ class LiveStatus(BaseModel):
     last_bar_time: Optional[str] = None
     last_bar_time_ts: Optional[float] = None
     mode: Optional[str] = None
+    equity_now: Optional[float] = None
+    equity_start: Optional[float] = None
     equity: float
+    daily_pnl: Optional[float] = None
+    max_intraday_dd: Optional[float] = None
     realized_pnl: float | None = None
     unrealized_pnl: float | None = None
     daily_realized_pnl: float | None = None
     daily_unrealized_pnl: float | None = None
     open_positions: List[LivePosition] = []
     risk_stats: Dict[str, Any] = {}
+    kill_switch_triggered: Optional[bool] = None
+    kill_switch_reason: Optional[str] = None
+    validation_issues: Optional[List[str]] = None
     data_source: Optional[str] = None
     stale_data_seconds: Optional[float] = None
+    heartbeat_age_sec: Optional[float] = None
     ws_reconnect_count: Optional[int] = None
     last_orders: List[Dict[str, Any]] = []
     timestamp: Optional[float] = None
@@ -268,7 +276,7 @@ def create_app() -> FastAPI:
 
     cfg = load_config("research")
     ml_proba_col = (
-        cfg.get("ml", {}).get("backtest", {}).get("proba_column", "ml_proba_long")
+            cfg.get("ml", {}).get("backtest", {}).get("proba_column", "ml_long_proba")
     )
 
     @app.get("/health")
@@ -577,6 +585,19 @@ def create_app() -> FastAPI:
             raise HTTPException(status_code=400, detail=str(exc))
         except Exception as exc:
             raise HTTPException(status_code=500, detail=f"Failed to read snapshot: {exc}")
+
+        payload.setdefault("equity_now", payload.get("equity"))
+        payload.setdefault("equity_start", payload.get("equity_start"))
+        payload.setdefault("daily_pnl", payload.get("daily_realized_pnl") or payload.get("daily_unrealized_pnl"))
+        payload.setdefault("max_intraday_dd", payload.get("max_intraday_dd") or payload.get("max_drawdown"))
+        payload.setdefault("kill_switch_triggered", payload.get("kill_switch_triggered"))
+        payload.setdefault("kill_switch_reason", payload.get("kill_switch_reason"))
+        val_issues = payload.get("validation_issues", [])
+        if not isinstance(val_issues, list):
+            val_issues = [val_issues] if val_issues else []
+        payload["validation_issues"] = val_issues
+        payload.setdefault("heartbeat_age_sec", payload.get("stale_data_seconds"))
+
         return LiveStatus(**payload)
 
     @app.post("/api/backtests/run", response_model=RunBacktestResponse)
@@ -827,6 +848,44 @@ def create_app() -> FastAPI:
             )
         rows.sort(key=lambda item: item.created_at, reverse=True)
         return rows
+
+    @app.get("/api/ml/models", response_model=List[ModelInfo])
+    def list_ml_models_all() -> List[ModelInfo]:
+        cfg_local = load_config("research")
+        ml_cfg = cfg_local.get("ml", {}) or {}
+        persistence_cfg = ml_cfg.get("persistence", {}) or {}
+        base_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
+
+        registry = load_registry(base_dir)
+        rows: List[ModelInfo] = []
+        for entry in registry.entries:
+            if entry.status != "success":
+                continue
+            if not validate_registry_entry(base_dir, entry):
+                continue
+            metrics_dict: Dict[str, float] = {}
+            if entry.cum_return is not None:
+                metrics_dict["cum_return"] = float(entry.cum_return)
+            if entry.sharpe is not None:
+                metrics_dict["sharpe"] = float(entry.sharpe)
+            rows.append(
+                ModelInfo(
+                    model_id=entry.model_id,
+                    symbol=entry.symbol,
+                    timeframe=entry.timeframe,
+                    model_type=entry.model_type,
+                    created_at=entry.created_at,
+                    metrics=metrics_dict,
+                )
+            )
+        rows.sort(key=lambda item: item.created_at, reverse=True)
+        return rows
+
+    @app.get("/api/ml/targets", response_model=List[MLTarget])
+    def list_ml_targets() -> List[MLTarget]:
+        cfg_local = load_config("research")
+        targets = get_ml_targets(cfg_local)
+        return [MLTarget(symbol=sym, timeframe=tf) for sym, tf in targets]
 
     def _compute_basic_metrics(equity: pd.Series) -> Dict[str, Optional[float]]:
         if equity.empty:

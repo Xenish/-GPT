@@ -121,7 +121,7 @@ class HistoricalOHLCVIngestor:
     def __init__(
         self,
         source: CandleSource,
-        warehouse: TimescaleWarehouse,
+        warehouse,
         *,
         chunk_size_bars: int = 900,
     ) -> None:
@@ -204,7 +204,7 @@ class LiveOHLCVIngestor:
         self,
         ws_source: WsBarSource,
         rest_source: CandleSource,
-        warehouse: TimescaleWarehouse,
+        warehouse,
         live_cfg: LiveConfig,
         *,
         flush_every: int = 50,

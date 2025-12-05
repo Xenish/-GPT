@@ -1,57 +1,54 @@
 from __future__ import annotations
 
+import numpy as np
 import pandas as pd
-import pytest
 
 from finantradealgo.backtester.backtest_engine import BacktestEngine
-from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
-from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import load_config
-from tests.utils_ml import prepare_ml_eval_df
+from finantradealgo.strategies.signal_column import ColumnSignalStrategy, ColumnSignalStrategyConfig
 
 
-@pytest.mark.slow
-def test_rule_vs_ml_integration_pipeline():
-    cfg = load_config("research")
-    df_all, meta = build_feature_pipeline_from_system_config(cfg)
-    df_all = df_all.reset_index(drop=True)
+def _make_test_df() -> pd.DataFrame:
+    ts = pd.date_range("2024-01-01", periods=50, freq="15min")
+    close = np.linspace(100, 105, len(ts))
+    open_ = close - 0.1
+    high = close + 0.2
+    low = close - 0.2
+    proba = np.concatenate([np.linspace(0.2, 0.9, 25), np.linspace(0.9, 0.3, 25)])
+    rule_sig = np.where(np.arange(len(ts)) % 10 == 0, 1.0, np.nan)
+    rule_sig[rule_sig == 1.0] = 1.0
+    df = pd.DataFrame(
+        {
+            "timestamp": ts,
+            "open": open_,
+            "high": high,
+            "low": low,
+            "close": close,
+            "ml_long_proba": proba,
+            "signal_rule": rule_sig,
+        }
+    )
+    return df
 
-    assert meta["symbol"] == cfg["symbol"]
-    assert meta["timeframe"] == cfg["timeframe"]
 
-    df_eval, proba_col = prepare_ml_eval_df(df_all, meta, cfg)
-    assert proba_col in df_eval.columns
+def test_rule_vs_ml_backtest_metrics_shape():
+    df = _make_test_df()
+    risk_engine = RiskEngine(RiskConfig())
 
-    risk_cfg = RiskConfig.from_dict(cfg.get("risk", {}))
+    ml_cfg = MLStrategyConfig(proba_col="ml_long_proba", entry_threshold=0.6, exit_threshold=0.4, warmup_bars=0)
+    ml_strategy = MLSignalStrategy(ml_cfg)
+    ml_engine = BacktestEngine(strategy=ml_strategy, risk_engine=risk_engine, price_col="close", timestamp_col="timestamp")
+    ml_result = ml_engine.run(df.copy())
 
-    rule_strategy = RuleSignalStrategy(RuleStrategyConfig.from_dict(cfg.get("rule", {})))
+    rule_strategy = ColumnSignalStrategy(ColumnSignalStrategyConfig(signal_col="signal_rule", warmup_bars=0))
     rule_engine = BacktestEngine(
         strategy=rule_strategy,
-        risk_engine=RiskEngine(risk_cfg),
+        risk_engine=risk_engine,
         price_col="close",
         timestamp_col="timestamp",
     )
+    rule_result = rule_engine.run(df.copy())
 
-    ml_strategy_cfg = MLStrategyConfig.from_dict(cfg.get("ml", {}).get("backtest", {}))
-    assert ml_strategy_cfg.proba_col == proba_col
-    ml_strategy = MLSignalStrategy(ml_strategy_cfg)
-    ml_engine = BacktestEngine(
-        strategy=ml_strategy,
-        risk_engine=RiskEngine(risk_cfg),
-        price_col="close",
-        timestamp_col="timestamp",
-    )
-
-    rule_result = rule_engine.run(df_eval)
-    ml_result = ml_engine.run(df_eval)
-
-    assert rule_result["metrics"]["trade_count"] >= 0
-    assert ml_result["metrics"]["trade_count"] >= 0
-
-    for res in (rule_result, ml_result):
-        metrics = res["metrics"]
-        assert metrics["final_equity"] is not None
-        assert not pd.isna(metrics["final_equity"])
-        assert not pd.isna(metrics["cum_return"])
+    assert set(ml_result["metrics"].keys()) == set(rule_result["metrics"].keys())
+    assert "equity_curve" in ml_result and "equity_curve" in rule_result

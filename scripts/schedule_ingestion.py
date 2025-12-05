@@ -36,6 +36,7 @@ from finantradealgo.data_engine.ingestion.writer import TimescaleWarehouse
 from finantradealgo.system.config_loader import (
     WarehouseConfig,
     load_config,
+    load_config_from_env,
     load_exchange_credentials,
 )
 
@@ -183,18 +184,14 @@ def archive_cleanup_job(state) -> None:
 
 
 @click.command()
-@click.option("--profile", default="research", type=click.Choice(["research", "live"]), help="Config profile to load.")
-@click.option("--config", default=None, help="System config path (overrides profile).")
+@click.option("--profile", default=None, type=click.Choice(["research", "live"]), help="Config profile to load (defaults to FINANTRADE_PROFILE or research).")
 @click.option("--symbols", multiple=True, help="Symbols to manage.")
 @click.option("--timeframes", multiple=True, help="Timeframes to manage.")
 @click.option("--run-once", is_flag=True, help="Run each job once and exit (no scheduler loop).")
-def main(profile: str, config: str | None, symbols, timeframes, run_once: bool):
+def main(profile: str | None, symbols, timeframes, run_once: bool):
     os.environ.setdefault("FCM_SERVER_KEY", "dummy_scheduler_key")
-    if config:
-        raise RuntimeError(
-            "Explicit config path is no longer supported. Use load_config(profile=...) with system.research.yml or system.live.yml."
-        )
-    cfg = load_config(profile)
+    cfg = load_config(profile) if profile else load_config_from_env()
+    profile_name = cfg.get("profile", "research")
     wh_cfg: WarehouseConfig = cfg["warehouse_cfg"]
     warehouse, rest_source = _build_wh_and_sources(cfg)
     state = init_state_store(wh_cfg.get_dsn())
@@ -208,7 +205,7 @@ def main(profile: str, config: str | None, symbols, timeframes, run_once: bool):
     if run_once:
         historical_backfill_job(symbols_list, tfs_list, ingestor, state)
         live_poll_job(symbols_list, tfs_list, ingestor, state)
-        feature_build_job(symbols_list, tfs_list, state, profile=profile)
+        feature_build_job(symbols_list, tfs_list, state, profile=profile_name)
         archive_cleanup_job(state)
         return
 
@@ -282,7 +279,7 @@ def main(profile: str, config: str | None, symbols, timeframes, run_once: bool):
         trigger="cron",
         minute="*/5",
         args=[symbols_list, tfs_list, state],
-        kwargs={"profile": profile},
+        kwargs={"profile": profile_name},
         id="feature_build",
         max_instances=1,
         replace_existing=True,

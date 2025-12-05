@@ -20,12 +20,41 @@ from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrat
 from finantradealgo.system.config_loader import LiveConfig, KillSwitchConfig, NotificationsConfig, WarehouseConfig, load_exchange_credentials
 from finantradealgo.system.kill_switch import KillSwitch
 from finantradealgo.system.notifications import create_notification_manager
+from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
+from finantradealgo.ml.model import compute_feature_schema_hash
 
 
 def build_strategy(cfg: Dict[str, any], df: pd.DataFrame) -> Tuple[str, BaseStrategy]:
     strategy_name = cfg.get("strategy", {}).get("default", "rule").lower()
     if strategy_name == "ml":
         strat_cfg = MLStrategyConfig.from_dict(cfg.get("ml", {}).get("backtest", {}))
+        ml_cfg = cfg.get("ml", {}) or {}
+        persistence_cfg = ml_cfg.get("persistence", {}) or {}
+        model_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
+        model_id = ml_cfg.get("backtest", {}).get("model_id") or ml_cfg.get("registry", {}).get("selected_id")
+        if not model_id:
+            latest = get_latest_model(
+                model_dir,
+                symbol=cfg.get("symbol", "BTCUSDT"),
+                timeframe=cfg.get("timeframe", "15m"),
+                model_type=ml_cfg.get("model", {}).get("type"),
+            )
+            if latest is None:
+                raise ValueError("No ML model found in registry for live ML strategy.")
+            model_id = latest.model_id
+        model_obj, meta = load_model_by_id(model_dir, model_id)
+        feature_cols = getattr(meta, "feature_cols", [])
+        missing = [c for c in feature_cols if c not in df.columns]
+        if missing:
+            raise ValueError(f"Live features missing required ML columns: {missing}")
+        if getattr(meta, "feature_schema_hash", None):
+            current_hash = compute_feature_schema_hash(list(df[feature_cols].columns))
+            if current_hash != meta.feature_schema_hash:
+                raise ValueError("Feature schema hash mismatch for live ML strategy; regenerate features or retrain.")
+
+        # compute proba once and attach
+        proba = model_obj.predict_proba(df[feature_cols].to_numpy())[:, 1]
+        df[strat_cfg.proba_col] = proba
         strategy = MLSignalStrategy(strat_cfg)
     else:
         strat_cfg = RuleStrategyConfig.from_dict(cfg.get("rule", {}))

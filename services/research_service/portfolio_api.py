@@ -61,6 +61,8 @@ class PortfolioOptimizeResponse(BaseModel):
     sharpe_ratio: float
     volatility: float
     max_drawdown: float
+    metrics: Dict[str, float] | None = None
+    sections: List[Dict[str, Any]] | None = None
 
 
 class PortfolioBacktestRequest(BaseModel):
@@ -109,6 +111,8 @@ class PortfolioBacktestResponse(BaseModel):
     # Trading
     rebalance_count: int
     turnover: float
+    metrics: Dict[str, float] | None = None
+    sections: List[Dict[str, Any]] | None = None
 
 
 class CorrelationAnalysisRequest(BaseModel):
@@ -257,6 +261,13 @@ async def optimize_portfolio(request: PortfolioOptimizeRequest):
         sharpe_ratio=round(portfolio.sharpe_ratio, 3),
         volatility=round(portfolio.volatility, 2),
         max_drawdown=round(portfolio.max_drawdown, 2),
+        metrics={
+            "sharpe_ratio": round(portfolio.sharpe_ratio, 3),
+            "volatility": round(portfolio.volatility, 2),
+            "max_drawdown": round(portfolio.max_drawdown, 2),
+            "risk_parity_weight": getattr(portfolio, "risk_parity_weight", 0.0) or 0.0,
+        },
+        sections=[{"title": "Portfolio Overview"}],
     )
 
 
@@ -335,6 +346,12 @@ async def backtest_portfolio(request: PortfolioBacktestRequest):
         avg_correlation=round(result.avg_correlation, 3),
         rebalance_count=result.rebalance_count,
         turnover=round(result.turnover, 2),
+        metrics={
+            "sharpe_ratio": round(result.sharpe_ratio, 3),
+            "volatility": round(result.volatility, 2),
+            "max_drawdown": round(result.max_drawdown, 2),
+        },
+        sections=[{"title": "Portfolio Overview"}],
     )
 
 

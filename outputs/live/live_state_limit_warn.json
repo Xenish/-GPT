@@ -5,7 +5,7 @@
   "strategy": "unknown",
   "mode": "exchange",
   "status": "RUNNING",
-  "start_time": "2025-12-03T22:01:53.000589+00:00",
+  "start_time": "2025-12-05T00:03:36.936985+00:00",
   "last_bar_time": "2025-01-01T00:00:00+00:00",
   "last_bar_time_ts": 1735689600.0,
   "equity": 1000.0,
@@ -20,10 +20,10 @@
   },
   "requested_action": null,
   "data_source": "replay",
-  "stale_data_seconds": 29109713.001290083,
+  "stale_data_seconds": 29203416.937503576,
   "ws_reconnect_count": 0,
   "last_orders": [],
-  "timestamp": 1764799313.0103276,
+  "timestamp": 1764893016.9448988,
   "kill_switch_triggered": false,
   "kill_switch_reason": null,
   "kill_switch_ts": null,
@@ -32,5 +32,6 @@
     "reason": "none",
     "trigger_time": null,
     "peak_equity": 1000.0
-  }
+  },
+  "validation_issues": 0
 }

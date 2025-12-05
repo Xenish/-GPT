@@ -14,6 +14,7 @@ from finantradealgo.research.ensemble.backtest import EnsembleBacktestResult
 from finantradealgo.research.reporting.base import (
     Report,
     ReportGenerator,
+    ReportProfile,
     ReportSection,
 )
 
@@ -37,6 +38,9 @@ class EnsembleReportGenerator(ReportGenerator):
         ensemble_type: str,
         symbol: str,
         timeframe: str,
+        run_id: Optional[str] = None,
+        profile: Optional[ReportProfile] = None,
+        strategy_id: Optional[str] = None,
         component_names: Optional[list[str]] = None,
     ) -> Report:
         """
@@ -47,6 +51,9 @@ class EnsembleReportGenerator(ReportGenerator):
             ensemble_type: Type of ensemble ("weighted" or "bandit")
             symbol: Trading symbol
             timeframe: Trading timeframe
+            run_id: Execution identifier (e.g., research run or live session id)
+            profile: Execution profile (research/live)
+            strategy_id: Strategy identifier (e.g., ensemble name/version)
             component_names: Optional list of component strategy names
 
         Returns:
@@ -56,11 +63,30 @@ class EnsembleReportGenerator(ReportGenerator):
         report = Report(
             title=f"Ensemble Strategy Report: {ensemble_type.title()}",
             description=f"{ensemble_type.title()} ensemble backtest for {symbol}/{timeframe}",
+            job_id=backtest_result.metadata.get("job_id") if hasattr(backtest_result, "metadata") else None,
+            run_id=run_id or (backtest_result.metadata.get("run_id") if hasattr(backtest_result, "metadata") else None),
+            profile=profile if isinstance(profile, ReportProfile) else (
+                ReportProfile(profile) if profile in {p.value for p in ReportProfile} else profile
+            ),
+            strategy_id=strategy_id or ensemble_type,
+            symbol=symbol,
+            timeframe=timeframe,
+            metrics={
+                "sharpe": backtest_result.ensemble_metrics.get("sharpe"),
+                "cum_return": backtest_result.ensemble_metrics.get("cum_return"),
+                "max_drawdown": backtest_result.ensemble_metrics.get("max_dd")
+                if "max_dd" in backtest_result.ensemble_metrics
+                else backtest_result.ensemble_metrics.get("max_drawdown"),
+                "trade_count": backtest_result.ensemble_metrics.get("trade_count"),
+                "win_rate": backtest_result.ensemble_metrics.get("win_rate"),
+            },
+            artifacts={},
             metadata={
                 "ensemble_type": ensemble_type,
                 "symbol": symbol,
                 "timeframe": timeframe,
                 "n_components": len(backtest_result.component_metrics),
+                "component_names": component_names,
             },
         )
 
@@ -146,7 +172,7 @@ Overall performance of the ensemble strategy.
 **Key Metrics**:
 - Cumulative Return: {metrics.get('cum_return', 0.0):.4f} ({metrics.get('cum_return', 0.0) * 100:.2f}%)
 - Sharpe Ratio: {metrics.get('sharpe', 0.0):.4f}
-- Max Drawdown: {metrics.get('max_dd', 0.0):.4f} ({metrics.get('max_dd', 0.0) * 100:.2f}%)
+- Max Drawdown: {metrics.get('max_drawdown', metrics.get('max_dd', 0.0)):.4f} ({metrics.get('max_drawdown', metrics.get('max_dd', 0.0)) * 100:.2f}%)
 - Trade Count: {metrics.get('trade_count', 0)}
 - Win Rate: {metrics.get('win_rate', 0.0):.4f} ({metrics.get('win_rate', 0.0) * 100:.2f}%)
 """

@@ -2,8 +2,8 @@
 Feature build runner supporting batch and incremental modes.
 
 Examples:
-    python scripts/run_feature_builder.py batch --symbols BTCUSDT --timeframes 15m --config config/system.research.yml
-    python scripts/run_feature_builder.py incremental --symbols BTCUSDT --timeframes 15m --config config/system.research.yml
+    FINANTRADE_PROFILE=research python scripts/run_feature_builder.py batch --symbols BTCUSDT --timeframes 15m
+    FINANTRADE_PROFILE=research python scripts/run_feature_builder.py incremental --symbols BTCUSDT --timeframes 15m
 """
 
 from __future__ import annotations
@@ -18,7 +18,7 @@ import pandas as pd
 
 from finantradealgo.features.feature_builder import FeatureBuilderService, FeatureSinkConfig
 from finantradealgo.data_engine.ingestion.state import IngestionStateStore, init_state_store
-from finantradealgo.system.config_loader import load_config
+from finantradealgo.system.config_loader import load_config, load_config_from_env
 
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
@@ -55,20 +55,15 @@ def _build_sink(kind: str, output_dir: Path, duckdb_path: Path | None, duckdb_ta
 
 
 @click.group()
-@click.option("--profile", default="research", type=click.Choice(["research", "live"]), help="Config profile to load.")
-@click.option("--config", default=None, help="System config path (overrides profile).")
+@click.option("--profile", default=None, type=click.Choice(["research", "live"]), help="Config profile to load (defaults to FINANTRADE_PROFILE or research).")
 @click.option("--output-dir", type=Path, default=None, help="Parquet output dir (defaults to data.features_dir).")
 @click.option("--sink", type=click.Choice(["parquet", "duckdb"]), default="parquet")
 @click.option("--duckdb-path", type=Path, default=None, help="DuckDB file path for duckdb sink.")
 @click.option("--duckdb-table", type=str, default="features", help="DuckDB base table name.")
 @click.pass_context
-def cli(ctx: click.Context, profile: str, config: str | None, output_dir: Path | None, sink: str, duckdb_path: Path | None, duckdb_table: str):
+def cli(ctx: click.Context, profile: str | None, output_dir: Path | None, sink: str, duckdb_path: Path | None, duckdb_table: str):
     os.environ.setdefault("FCM_SERVER_KEY", "dummy_feature_builder_key")
-    if config:
-        raise RuntimeError(
-            "Explicit config path is no longer supported. Use load_config(profile=...) with system.research.yml or system.live.yml."
-        )
-    sys_cfg = load_config(profile)
+    sys_cfg = load_config(profile) if profile else load_config_from_env()
     data_cfg = sys_cfg["data_cfg"]
     sink_cfg = _build_sink(
         sink,

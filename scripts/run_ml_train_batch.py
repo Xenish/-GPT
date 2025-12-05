@@ -6,7 +6,6 @@ for specified combinations instead of all possible combinations.
 
 Usage:
     python scripts/run_ml_train_batch.py
-    python scripts/run_ml_train_batch.py --config config/system.research.yml
 """
 
 from __future__ import annotations
@@ -17,6 +16,8 @@ import sys
 import time
 from pathlib import Path
 from typing import Any, Dict
+
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -31,6 +32,7 @@ from finantradealgo.ml.model import (
     SklearnLongModel,
     SklearnModelConfig,
     save_sklearn_model,
+    set_global_seed,
 )
 from finantradealgo.ml.model_registry import register_model
 from finantradealgo.ml.ml_utils import get_ml_targets, is_ml_enabled
@@ -73,7 +75,8 @@ def train_model_for_target(
         logger.info(f"Loaded {len(df)} bars with {len(df.columns)} features")
 
         # Extract configuration
-        ml_cfg = cfg.get("ml", {})
+        ml_cfg_obj = cfg.get("ml_cfg") or {}
+        ml_cfg = cfg.get("ml", {}) or {}
         persistence_cfg = ml_cfg.get("persistence", {}) or {}
         feature_cols = pipeline_meta.get("feature_cols")
 
@@ -105,37 +108,56 @@ def train_model_for_target(
 
         # Train model
         model_cfg = SklearnModelConfig.from_dict(ml_cfg.get("model"))
+        if model_cfg.random_state is not None:
+            set_global_seed(model_cfg.random_state)
         model = SklearnLongModel(model_cfg)
         model.fit(X_train, y_train)
 
         logger.info(f"Model trained successfully for {symbol} {timeframe}")
 
         # Save model
-        model_dir = Path(persistence_cfg.get("model_dir", "outputs/ml_models"))
+        model_dir = Path(getattr(ml_cfg_obj, "model_dir", None) or persistence_cfg.get("model_dir", "outputs/ml_models"))
         model_dir.mkdir(parents=True, exist_ok=True)
 
-        model_id = save_sklearn_model(
-            model=model.model,
-            model_dir=str(model_dir),
+        if "timestamp" not in df_train.columns:
+            raise ValueError("timestamp column missing for model metadata.")
+
+        config_snapshot = {
+            "profile": cfg.get("profile"),
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "label": label_cfg.__dict__,
+            "model": model_cfg.__dict__,
+            "feature_preset": pipeline_meta.get("feature_preset", "extended"),
+            "feature_cols": feature_cols,
+        }
+
+        meta = save_sklearn_model(
+            model=model.clf,
             symbol=symbol,
             timeframe=timeframe,
-            feature_cols=feature_cols,
-            label_cfg=label_cfg,
             model_cfg=model_cfg,
-            pipeline_meta=pipeline_meta,
+            label_cfg=label_cfg,
+            feature_preset=pipeline_meta.get("feature_preset", "extended"),
+            feature_cols=feature_cols,
+            train_start=pd.to_datetime(df_train["timestamp"].iloc[0]),
+            train_end=pd.to_datetime(df_train["timestamp"].iloc[-1]),
+            metrics={"train_size": len(df_train)},
+            base_dir=str(model_dir),
+            pipeline_version=pipeline_meta.get("pipeline_version", PIPELINE_VERSION),
+            seed=model_cfg.random_state,
+            config_snapshot=config_snapshot,
         )
 
-        logger.info(f"Model saved with ID: {model_id}")
+        logger.info(f"Model saved with ID: {meta.model_id}")
 
         # Register model
         if persistence_cfg.get("use_registry", True):
             register_model(
-                model_dir=str(model_dir),
-                model_id=model_id,
-                symbol=symbol,
-                timeframe=timeframe,
-                model_type=model_cfg.type,
-                metrics={},  # Add metrics if available
+                meta,
+                base_dir=str(model_dir),
+                status="success",
+                max_models=persistence_cfg.get("max_models_per_symbol_tf"),
             )
             logger.info(f"Model registered in registry")
 
@@ -144,7 +166,7 @@ def train_model_for_target(
         return {
             "symbol": symbol,
             "timeframe": timeframe,
-            "model_id": model_id,
+            "model_id": meta.model_id,
             "train_samples": len(df_train),
             "features": len(feature_cols),
             "elapsed": elapsed,
@@ -166,13 +188,10 @@ def train_model_for_target(
 def main():
     import argparse
 
-    parser = argparse.ArgumentParser(description="Batch ML model training")
-    parser.add_argument(
-        "--profile",
-        choices=["research", "live"],
-        default="research",
-        help="Config profile to load (default: research)",
-    )
+    parser = argparse.ArgumentParser(description="Batch ML model training (research profile only)")
+    parser.add_argument("--symbol", type=str, help="Override single symbol (optional)")
+    parser.add_argument("--timeframe", type=str, help="Override single timeframe (optional)")
+    parser.add_argument("--seed", type=int, help="Random seed propagated to model config")
     args = parser.parse_args()
 
     # Set dummy FCM key for config loading
@@ -181,7 +200,14 @@ def main():
 
     # Load config
     logger.info(f"Loading config profile '{args.profile}'")
-    cfg = load_config(args.profile)
+    cfg = load_config("research")
+    if args.symbol:
+        cfg["symbol"] = args.symbol
+    if args.timeframe:
+        cfg["timeframe"] = args.timeframe
+    if args.seed is not None:
+        cfg.setdefault("ml", {}).setdefault("model", {})["random_state"] = args.seed
+        set_global_seed(args.seed)
 
     # Check if ML is enabled
     if not is_ml_enabled(cfg):

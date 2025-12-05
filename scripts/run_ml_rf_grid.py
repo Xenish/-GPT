@@ -20,14 +20,14 @@ def main() -> None:
     symbol = cfg.get("symbol", "AIAUSDT")
     timeframe = cfg.get("timeframe", "15m")
 
-    df_features = build_feature_pipeline_from_system_config(
+    df_features, meta = build_feature_pipeline_from_system_config(
+        cfg,
         symbol=symbol,
         timeframe=timeframe,
-        cfg=cfg,
     )
 
     feature_preset = cfg.get("ml", {}).get("feature_preset", "extended")
-    feature_cols = get_feature_cols(feature_preset)
+    feature_cols = meta.get("feature_cols") or get_feature_cols(df_features, feature_preset)
     df_features = df_features.dropna(subset=feature_cols, how="any")
     X = df_features[feature_cols].values
 

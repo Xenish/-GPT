@@ -49,6 +49,6 @@ def prepare_ml_eval_df(
     proba = model.predict_proba(X_eval)[:, 1]
 
     backtest_cfg = ml_section.get("backtest", {}) or {}
-    proba_col = backtest_cfg.get("proba_column", "ml_proba_long")
+    proba_col = backtest_cfg.get("proba_column", "ml_long_proba")
     df_eval[proba_col] = proba
     return df_eval, proba_col

@@ -51,14 +51,24 @@ async def run_monte_carlo(request: MonteCarloRequest):
         risk_calc = RiskMetricsCalculator()
         risk_assessment = risk_calc.calculate_risk_assessment(result)
 
+        summary = result.to_summary_dict()
+        metrics = {
+            "median_return": summary.get("median_return"),
+            "p5_return": summary.get("p5_return"),
+            "p95_return": summary.get("p95_return"),
+            "worst_case_dd": summary.get("worst_drawdown"),
+        }
+
         return {
             "success": True,
-            "summary": result.to_summary_dict(),
+            "summary": summary,
             "risk_assessment": risk_assessment.to_dict(),
+            "metrics": metrics,
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        # Surface clear error for tests/clients
+        raise HTTPException(status_code=400, detail=str(e))
 
 
 @router.post("/position-size")

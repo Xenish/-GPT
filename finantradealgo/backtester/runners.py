@@ -12,6 +12,7 @@ from finantradealgo.features.feature_pipeline import (
     PIPELINE_VERSION,
     build_feature_pipeline_from_system_config,
 )
+from finantradealgo.ml.model import compute_feature_schema_hash
 from finantradealgo.ml.model_registry import get_latest_model, load_model_by_id
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.strategy_engine import create_strategy
@@ -40,14 +41,20 @@ def _inject_ml_proba_from_registry(
     symbol: str,
     timeframe: str,
 ) -> pd.DataFrame:
-    ml_cfg = cfg.get("ml", {}) or {}
-    backtest_cfg = ml_cfg.get("backtest", {}) or {}
-    persistence_cfg = ml_cfg.get("persistence", {}) or {}
+    ml_cfg = cfg.get("ml_cfg") or cfg.get("ml", {}) or {}
+    backtest_cfg = getattr(ml_cfg, "backtest", None) or (cfg.get("ml", {}) or {}).get("backtest", {}) or {}
+    persistence_cfg = getattr(ml_cfg, "persistence", None) or (cfg.get("ml", {}) or {}).get("persistence", {}) or {}
 
-    proba_col = backtest_cfg.get("proba_column", "ml_proba_long")
-    model_dir = Path(persistence_cfg.get("model_dir", "outputs/ml_models"))
+    proba_col = (
+        getattr(ml_cfg, "proba_column", None)
+        or backtest_cfg.get("proba_column")
+        or backtest_cfg.get("proba_col")
+        or "ml_long_proba"
+    )
+    model_dir = Path(getattr(ml_cfg, "model_dir", None) or persistence_cfg.get("model_dir", "outputs/ml_models"))
 
-    model_type = ml_cfg.get("model", {}).get("type")
+    raw_ml_dict = cfg.get("ml", {}) or {}
+    model_type = raw_ml_dict.get("model", {}).get("type")
     entry = get_latest_model(
         str(model_dir),
         symbol=symbol,
@@ -85,6 +92,13 @@ def _inject_ml_proba_from_registry(
 
     df_features = df_features.copy()
     X = df_features[feature_cols].to_numpy()
+    if getattr(meta, "feature_schema_hash", None):
+        current_hash = compute_feature_schema_hash(list(df_features.columns))
+        if current_hash != meta.feature_schema_hash:
+            raise ValueError(
+                "Feature schema hash mismatch between model metadata and feature DataFrame. "
+                "Regenerate features or retrain the model."
+            )
     proba = model.predict_proba(X)
     if proba.shape[1] < 2:
         raise ValueError("Loaded model does not provide binary probabilities.")

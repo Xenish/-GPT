@@ -4,12 +4,7 @@ Comprehensive guide to the FinanTradeAlgo research reporting infrastructure.
 
 ## Overview
 
-The reporting system provides automated generation of professional HTML, Markdown, and JSON reports for research activities. It supports:
-
-- **Strategy Parameter Search Reports**: Top performers, parameter sensitivity, performance distributions
-- **Ensemble Strategy Reports**: Component comparison, weight evolution, bandit statistics
-- **Customizable Formats**: HTML (styled), Markdown, JSON
-- **API Integration**: Generate reports via REST endpoints
+The reporting system provides automated generation of professional HTML, Markdown, and JSON reports for research, live, ensemble, and backtest workflows. All outputs share the same unified `Report` contract so strategy search, ensemble, backtest, live, and portfolio flows can plug into a single model.
 
 ## Architecture
 
@@ -17,27 +12,39 @@ The reporting system provides automated generation of professional HTML, Markdow
 
 ```
 finantradealgo/research/reporting/
-├── __init__.py                # Package exports
-├── base.py                    # Core infrastructure (Report, ReportSection, ReportGenerator)
-├── strategy_search.py         # Strategy search report generator
-└── ensemble.py                # Ensemble report generator
+|-- __init__.py            # Package exports
+|-- base.py                # Core infrastructure (Report, ReportSection, ReportGenerator)
+|-- strategy_search.py     # Strategy search report generator
+`-- ensemble.py            # Ensemble report generator
 ```
 
 ### Report Structure
 
-```python
-Report
-├── title: str
-├── description: str
-├── created_at: datetime
-├── metadata: Dict[str, Any]
-└── sections: List[ReportSection]
-    └── ReportSection
-        ├── title: str
-        ├── content: str (markdown text)
-        ├── data: Dict[str, DataFrame | Dict]
-        └── subsections: List[ReportSection]
-```
+Report:
+- title: str
+- description: str
+- job_id: str | None
+- run_id: str | None
+- profile: "research" | "live" | None
+- strategy_id: str | None (e.g., "rule", "ml", "trend_continuation")
+- symbol: str | None
+- timeframe: str | None
+- metrics: Dict[str, float | int | str]
+- artifacts: Dict[str, str] (equity_csv, trades_csv, heatmap_html, etc.)
+- created_at: datetime
+- metadata: Dict[str, Any] | None
+- sections: List[ReportSection]
+
+ReportSection:
+- title: str
+- content: str (markdown text)
+- metrics: Dict[str, float | int | str]
+- artifacts: Dict[str, str]
+- data: Dict[str, DataFrame | Dict] | None
+- metadata: Dict[str, Any] | None
+- subsections: List[ReportSection]
+
+Both `Report.to_dict()` and `ReportSection.to_dict()` emit JSON-friendly structures (datetimes are ISO strings, enums are values, dataframes become lists of records) and `from_dict()` restores them.
 
 ## Usage
 
@@ -52,41 +59,46 @@ from pathlib import Path
 from finantradealgo.research.reporting import (
     StrategySearchReportGenerator,
     ReportFormat,
+    ReportProfile,
 )
 
-# Initialize generator
 generator = StrategySearchReportGenerator()
 
-# Generate report
 report = generator.generate(
     job_dir=Path("outputs/strategy_search/job_20241130_123456"),
     job_id="job_20241130_123456",
-    top_n=10,  # Highlight top 10 performers
+    run_id="run_001",
+    profile=ReportProfile.RESEARCH,
+    strategy_id="trend_continuation",
+    symbol="AIAUSDT",
+    timeframe="15m",
+    top_n=10,
 )
 
-# Save as HTML
 report.save("reports/strategy_search/my_report.html", format=ReportFormat.HTML)
-
-# Save as Markdown
 report.save("reports/strategy_search/my_report.md", format=ReportFormat.MARKDOWN)
-
-# Save as JSON
 report.save("reports/strategy_search/my_report.json", format=ReportFormat.JSON)
 ```
 
 #### Via REST API
 
 ```bash
-# Generate report for job
 curl -X POST http://localhost:8001/api/research/reports/strategy-search \
   -H "Content-Type: application/json" \
   -d '{
     "job_id": "job_20241130_123456",
+    "run_id": "run_001",
+    "profile": "research",
+    "strategy_id": "trend_continuation",
+    "symbol": "AIAUSDT",
+    "timeframe": "15m",
     "top_n": 10,
     "format": "html"
   }'
+```
 
-# Response
+Response (abridged):
+```json
 {
   "success": true,
   "report_id": "job_20241130_123456",
@@ -96,74 +108,56 @@ curl -X POST http://localhost:8001/api/research/reports/strategy-search \
 }
 ```
 
-#### Via Python Requests
-
-```python
-import requests
-
-response = requests.post(
-    "http://localhost:8001/api/research/reports/strategy-search",
-    json={
-        "job_id": "job_20241130_123456",
-        "top_n": 10,
-        "format": "html",
-    }
-)
-
-result = response.json()
-print(f"Report saved to: {result['file_path']}")
-```
-
 ### 2. Ensemble Reports
 
 Generate reports for ensemble backtests.
 
-#### Via Python SDK
-
 ```python
-from finantradealgo.research.reporting import EnsembleReportGenerator
+from finantradealgo.research.reporting import EnsembleReportGenerator, ReportProfile
 from finantradealgo.research.ensemble.backtest import run_ensemble_backtest
 
-# Run ensemble backtest (see ensemble playbook)
 result = run_ensemble_backtest(ensemble_strategy, df, components, sys_cfg)
 
-# Generate report
-generator = EnsembleReportGenerator()
-report = generator.generate(
+report = EnsembleReportGenerator().generate(
     backtest_result=result,
-    ensemble_type="weighted",  # or "bandit"
+    ensemble_type="weighted",
+    strategy_id="ensemble_v1",
+    profile=ReportProfile.RESEARCH,
     symbol="AIAUSDT",
     timeframe="15m",
-    component_names=["rule", "trend_continuation", "sweep_reversal"],
+    run_id="run_ensemble_42",
 )
 
-# Save report
 report.save("reports/ensemble/ensemble_AIAUSDT_15m.html")
 ```
 
 ### 3. Custom Reports
 
-Create custom reports using the base infrastructure.
+Create custom reports using the base infrastructure with the unified fields.
 
 ```python
-from finantradealgo.research.reporting import Report, ReportSection
+from finantradealgo.research.reporting import Report, ReportSection, ReportProfile
 import pandas as pd
 
-# Create report
 report = Report(
     title="My Custom Analysis",
     description="Custom analysis of strategy XYZ",
-    metadata={"strategy": "XYZ", "version": "1.0"},
+    job_id="job_20241130_123456",
+    run_id="run_custom_01",
+    profile=ReportProfile.RESEARCH,
+    strategy_id="rule",
+    symbol="BTCUSDT",
+    timeframe="1h",
+    metrics={"sharpe": 1.2, "return": 0.35},
+    artifacts={"equity_csv": "reports/custom/equity.csv"},
 )
 
-# Add section with text
 section1 = ReportSection(
     title="Introduction",
     content="This report analyzes strategy XYZ performance...",
 )
 report.add_section(section1)
 
-# Add section with data
 metrics_df = pd.DataFrame({
     "Metric": ["Sharpe", "Return", "Max DD"],
     "Value": [0.85, 0.42, -0.18],
@@ -172,11 +166,12 @@ metrics_df = pd.DataFrame({
 section2 = ReportSection(
     title="Performance Metrics",
     content="Key performance indicators:",
+    metrics={"trades": 124, "win_rate": "54%"},
     data={"Metrics Table": metrics_df},
+    artifacts={"heatmap_html": "reports/custom/heatmap.html"},
 )
 report.add_section(section2)
 
-# Save
 report.save("reports/custom/my_analysis.html")
 ```
 
@@ -184,29 +179,40 @@ report.save("reports/custom/my_analysis.html")
 
 ### HTML Format
 
-- **Professional styling** with embedded CSS
-- **Responsive design** (works on mobile)
-- **Styled tables** with alternating row colors
-- **Section hierarchy** with proper heading levels
-- **Best for**: Sharing with stakeholders, presentations, documentation
+- Professional styling with embedded CSS
+- Responsive design (works on mobile)
+- Context box for job/run/profile/strategy/symbol/timeframe
+- Section-level metrics, artifacts, and tables
+- Best for sharing with stakeholders
 
-**Example Output**:
+Example (truncated):
 ```html
 <!DOCTYPE html>
 <html>
 <head>
   <title>Strategy Search Report</title>
-  <style>
-    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', ...; }
-    h1 { color: #2c3e50; border-bottom: 3px solid #3498db; }
-    table { border-collapse: collapse; width: 100%; }
-    th { background-color: #3498db; color: white; }
-  </style>
+  <style>...</style>
 </head>
 <body>
   <div class="container">
     <h1>Strategy Search Report</h1>
-    <!-- Report content -->
+    <div class="metadata">
+      <h3>Context</h3>
+      <ul>
+        <li><strong>Profile</strong>: research</li>
+        <li><strong>Job ID</strong>: job_20241130_123456</li>
+        <li><strong>Run ID</strong>: run_001</li>
+        <li><strong>Strategy</strong>: trend_continuation</li>
+        <li><strong>Symbol</strong>: AIAUSDT</li>
+        <li><strong>Timeframe</strong>: 15m</li>
+      </ul>
+      <h3>Metrics</h3>
+      <ul>
+        <li><strong>sharpe</strong>: 1.24</li>
+        <li><strong>return</strong>: 0.42</li>
+      </ul>
+    </div>
+    <!-- Sections ... -->
   </div>
 </body>
 </html>
@@ -214,50 +220,166 @@ report.save("reports/custom/my_analysis.html")
 
 ### Markdown Format
 
-- **Plain text** with markdown formatting
-- **Easy to read** in text editors and GitHub
-- **Version control friendly** (diffs work well)
-- **Best for**: Documentation, version control, developer notes
+- Plain text with markdown formatting
+- Context, metrics, and artifacts rendered as bullet lists
+- Version control friendly
 
-**Example Output**:
+Example:
 ```markdown
 # Strategy Search Report
 
-Generated: 2024-11-30 12:34:56 UTC
+Parameter search results
+
+**Context:**
+- Profile: research
+- Job ID: job_20241130_123456
+- Run ID: run_001
+- Strategy: trend_continuation
+- Symbol: AIAUSDT
+- Timeframe: 15m
+
+**Metrics:**
+- sharpe: 1.24
+- return: 0.42
+
+**Artifacts:**
+- equity_csv: reports/strategy_search/job_20241130_123456/equity.csv
+- trades_csv: reports/strategy_search/job_20241130_123456/trades.csv
+
+**Generated**: 2024-11-30 12:34:56 UTC
 
 ---
 
 ## Job Overview
-
-This report summarizes the results of a parameter search for the **trend_continuation** strategy.
-
-**Job Configuration**:
-- Symbol: AIAUSDT
-- Timeframe: 15m
+This report summarizes the results of a parameter search for the trend_continuation strategy.
 ```
 
 ### JSON Format
 
-- **Structured data** for programmatic access
-- **Machine-readable** format
-- **Best for**: API integration, data pipelines, further processing
+- Structured data for programmatic access
+- DataFrames serialized to `{"__type__": "dataframe", "columns": [...], "data": [...]}` and restored via `from_dict()`
 
-**Example Output**:
+Example:
 ```json
 {
   "title": "Strategy Search Report",
   "description": "Parameter search results",
+  "job_id": "job_20241130_123456",
+  "run_id": "run_001",
+  "profile": "research",
+  "strategy_id": "trend_continuation",
+  "symbol": "AIAUSDT",
+  "timeframe": "15m",
+  "metrics": {
+    "sharpe": 1.24,
+    "return": 0.42
+  },
+  "artifacts": {
+    "equity_csv": "reports/strategy_search/job_20241130_123456/equity.csv",
+    "trades_csv": "reports/strategy_search/job_20241130_123456/trades.csv"
+  },
   "created_at": "2024-11-30T12:34:56Z",
   "sections": [
     {
       "title": "Job Overview",
       "content": "This report summarizes...",
-      "data": {...}
+      "metrics": {
+        "evaluations": 500,
+        "success_rate": 0.98
+      },
+      "artifacts": {},
+      "data": null,
+      "metadata": null,
+      "subsections": []
     }
   ],
   "metadata": {
-    "job_id": "job_20241130_123456",
-    "strategy": "trend_continuation"
+    "git_sha": "abc123def"
+  }
+}
+```
+
+**Strategy Search JSON Example**
+```json
+{
+  "title": "Strategy Search Report: job_20241130_123456",
+  "description": "Parameter search results for trend_continuation strategy on AIAUSDT/15m",
+  "job_id": "job_20241130_123456",
+  "run_id": "run_001",
+  "profile": "research",
+  "strategy_id": "trend_continuation",
+  "symbol": "AIAUSDT",
+  "timeframe": "15m",
+  "metrics": {
+    "best_sharpe": 1.42,
+    "best_cum_return": 0.37,
+    "samples_total": 500,
+    "samples_ok": 480,
+    "samples_failed": 20
+  },
+  "artifacts": {
+    "results_parquet": "outputs/strategy_search/job_20241130_123456/results.parquet",
+    "results_csv": "outputs/strategy_search/job_20241130_123456/results.csv",
+    "meta_json": "outputs/strategy_search/job_20241130_123456/meta.json",
+    "heatmap_html": "outputs/strategy_search/job_20241130_123456/param_heatmap.html"
+  },
+  "created_at": "2024-11-30T12:34:56Z",
+  "sections": [
+    {
+      "title": "Job Overview",
+      "content": "This report summarizes...",
+      "metrics": {"evaluations": 500, "success_rate": 96.0},
+      "artifacts": {},
+      "data": null,
+      "metadata": null,
+      "subsections": []
+    }
+  ],
+  "metadata": {
+    "n_samples": 500,
+    "search_type": "random",
+    "git_sha": "abc123def"
+  }
+}
+```
+
+**Ensemble JSON Example**
+```json
+{
+  "title": "Ensemble Strategy Report: Weighted",
+  "description": "Weighted ensemble backtest for BTCUSDT/15m",
+  "job_id": null,
+  "run_id": "ensemble_run_01",
+  "profile": "research",
+  "strategy_id": "ensemble_v1",
+  "symbol": "BTCUSDT",
+  "timeframe": "15m",
+  "metrics": {
+    "sharpe": 1.05,
+    "cum_return": 0.22,
+    "max_drawdown": -0.09,
+    "trade_count": 320,
+    "win_rate": 0.53
+  },
+  "artifacts": {},
+  "created_at": "2024-11-30T12:34:56Z",
+  "sections": [
+    {
+      "title": "Overview",
+      "content": "This report analyzes a weighted ensemble strategy...",
+      "metrics": {},
+      "artifacts": {},
+      "data": null,
+      "metadata": null,
+      "subsections": []
+    }
+  ],
+  "metadata": {
+    "ensemble_type": "weighted",
+    "symbol": "BTCUSDT",
+    "timeframe": "15m",
+    "n_components": 3,
+    "component_names": ["rule", "ml", "trend_continuation"]
   }
 }
 ```
@@ -272,6 +394,11 @@ Generate strategy search report.
 ```json
 {
   "job_id": "job_20241130_123456",
+  "run_id": "run_001",
+  "profile": "research",
+  "strategy_id": "trend_continuation",
+  "symbol": "AIAUSDT",
+  "timeframe": "15m",
   "top_n": 10,
   "format": "html"
 }
@@ -324,10 +451,6 @@ View or download a report.
 **Query Parameters**:
 - `format` (optional): Report format (`html`, `markdown`, `json`)
 
-**Response**:
-- HTML reports: Rendered directly in browser
-- Other formats: File download
-
 ### DELETE `/api/research/reports/{report_type}/{report_id}`
 
 Delete a report.
@@ -345,59 +468,45 @@ Delete a report.
 
 ### Strategy Search Report Sections
 
-1. **Job Overview**
+1. Job Overview
    - Job configuration (strategy, symbol, timeframe, search type)
    - Execution summary (total evaluations, success rate)
    - Performance summary statistics (mean, median, std dev of metrics)
-
-2. **Top Performers**
+2. Top Performers
    - Top N parameter sets ranked by Sharpe ratio
    - Key metrics for each (Sharpe, return, drawdown, trade count, win rate)
    - Parameter values for reproducibility
-
-3. **Performance Distribution**
+3. Performance Distribution
    - Quartile analysis for key metrics
    - Min, 25th, 50th (median), 75th, max percentiles
-   - Helps understand full distribution, not just top performers
-
-4. **Parameter Analysis**
+4. Parameter Analysis
    - Correlation between parameters and Sharpe ratio
    - Identifies which parameters have strongest impact
-   - Helps guide future optimization
-
-5. **Recommendations**
+5. Recommendations
    - Best parameter set with full configuration
    - Next steps for validation
    - Suggestions for ensemble or further testing
 
 ### Ensemble Report Sections
 
-1. **Overview**
+1. Overview
    - Ensemble type (weighted or bandit)
    - Methodology explanation
    - List of component strategies
-
-2. **Ensemble Performance**
+2. Ensemble Performance
    - Overall ensemble metrics (Sharpe, return, drawdown, etc.)
    - Key performance indicators
-
-3. **Component Comparison**
+3. Component Comparison
    - Individual component performance
    - Comparison to ensemble (delta Sharpe)
-   - Identifies which components contribute most
-
-4. **Weight Evolution** (Weighted Ensembles)
+4. Weight Evolution (Weighted Ensembles)
    - Component weights over time
    - Final weight allocation
-   - Percentage of contribution
-
-5. **Bandit Statistics** (Bandit Ensembles)
+5. Bandit Statistics (Bandit Ensembles)
    - Arm selection counts
    - Mean rewards per arm
    - Selection percentages
-   - Exploration vs exploitation balance
-
-6. **Recommendations**
+6. Recommendations
    - Ensemble vs best component comparison
    - Optimization suggestions (reweighting, parameter tuning)
    - Next steps for validation and deployment
@@ -408,22 +517,22 @@ Delete a report.
 
 ```
 reports/
-├── strategy_search/
-│   ├── job_20241130_123456.html
-│   ├── job_20241130_123456.md
-│   └── job_20241201_143021.html
-├── ensemble/
-│   ├── ensemble_AIAUSDT_15m_weighted.html
-│   └── ensemble_BTCUSDT_1h_bandit.html
-└── custom/
-    └── my_analysis.html
+|-- strategy_search/
+|   |-- job_20241130_123456.html
+|   |-- job_20241130_123456.md
+|   `-- job_20241201_143021.html
+|-- ensemble/
+|   |-- ensemble_AIAUSDT_15m_weighted.html
+|   `-- ensemble_BTCUSDT_1h_bandit.html
+`-- custom/
+    `-- my_analysis.html
 ```
 
 ### 2. Naming Conventions
 
-- **Strategy Search**: `{job_id}.{format}`
-- **Ensemble**: `ensemble_{symbol}_{timeframe}_{type}.{format}`
-- **Custom**: Descriptive name with underscores
+- Strategy Search: `{job_id}.{format}`
+- Ensemble: `ensemble_{symbol}_{timeframe}_{type}.{format}`
+- Custom: Descriptive name with underscores
 
 ### 3. Report Retention
 
@@ -433,34 +542,37 @@ reports/
 
 ### 4. Metadata Tracking
 
-Always include in report metadata:
-- `job_id` or unique identifier
-- `strategy` name
-- `symbol` and `timeframe`
-- `created_at` timestamp
-- `git_sha` (code version)
-- `n_samples` or `n_components`
+Use the dedicated fields instead of stuffing metadata:
+- `job_id` and/or `run_id`
+- `profile` ("research" or "live")
+- `strategy_id`
+- `symbol`, `timeframe`
+- `metrics` (key performance metrics)
+- `artifacts` (paths or URLs to outputs)
+
+Optional extras can still live under `metadata` (e.g., `git_sha`, `n_samples`).
 
 Example:
 ```python
 report = Report(
     title="My Report",
-    metadata={
-        "job_id": "job_20241130_123456",
-        "strategy": "trend_continuation",
-        "symbol": "AIAUSDT",
-        "timeframe": "15m",
-        "git_sha": "abc123def",
-        "n_samples": 100,
-    }
+    job_id="job_20241130_123456",
+    run_id="run_001",
+    profile=ReportProfile.RESEARCH,
+    strategy_id="trend_continuation",
+    symbol="AIAUSDT",
+    timeframe="15m",
+    metrics={"sharpe": 1.1, "return": 0.28},
+    artifacts={"equity_csv": "reports/.../equity.csv"},
+    metadata={"git_sha": "abc123def", "n_samples": 100},
 )
 ```
 
 ### 5. Sharing Reports
 
-- **HTML**: Best for email, Slack, presentations
-- **Markdown**: Best for GitHub, documentation sites
-- **JSON**: Best for programmatic processing, dashboards
+- HTML: Best for email, Slack, presentations
+- Markdown: Best for GitHub, documentation sites
+- JSON: Best for programmatic processing, dashboards
 
 ## Customization
 
@@ -469,39 +581,30 @@ report = Report(
 Create your own report generator by subclassing `ReportGenerator`:
 
 ```python
-from finantradealgo.research.reporting import ReportGenerator, Report, ReportSection
+from finantradealgo.research.reporting import ReportGenerator, Report, ReportSection, ReportProfile
 
 class MyCustomReportGenerator(ReportGenerator):
     """Generate custom reports."""
 
     def generate(self, data, **kwargs) -> Report:
-        """
-        Generate custom report.
-
-        Args:
-            data: Input data
-            **kwargs: Additional arguments
-
-        Returns:
-            Generated report
-        """
-        # Create report
         report = Report(
             title="My Custom Report",
             description="Custom analysis",
+            profile=ReportProfile.RESEARCH,
+            strategy_id="custom_strategy",
         )
 
-        # Add sections
         section = ReportSection(
             title="Analysis",
             content="...",
-            data={"Table": data},
+            metrics={"sharpe": 0.9},
+            artifacts={"chart_html": "reports/custom/chart.html"},
+            data={"table": data},
         )
         report.add_section(section)
 
         return report
 
-# Use it
 generator = MyCustomReportGenerator()
 report = generator.generate(my_data)
 report.save("reports/custom/my_report.html")
@@ -518,7 +621,6 @@ class CustomSection(ReportSection):
     """Custom formatted section."""
 
     def to_html(self, level: int = 1) -> str:
-        """Custom HTML rendering."""
         html = f"<div class='custom-section'>"
         html += f"<h{level}>{self.title}</h{level}>"
         html += f"<p class='custom-content'>{self.content}</p>"
@@ -533,7 +635,6 @@ Modify CSS in `base.py` `Report.to_html()` method or inject custom CSS:
 ```python
 report.save("my_report.html")
 
-# Post-process to inject custom CSS
 with open("my_report.html", "r") as f:
     html = f.read()
 
@@ -584,9 +685,11 @@ with open("my_report.html", "w") as f:
 - Check browser console for errors
 - Verify HTML file contains `<style>` tag
 
-## Examples
+## Extended Reports
 
-See [examples.md](examples.md) for comprehensive usage examples.
+- **Portfolio API**: Responses now include `metrics` (e.g., `sharpe_ratio`, `volatility`, `max_drawdown`, `risk_parity_weight`) and `sections` with `title="Portfolio Overview"` to align with the unified report contract shape.
+- **Monte Carlo API**: `/montecarlo/run` adds `metrics` with `median_return`, `p5_return`, `p95_return`, and `worst_case_dd` alongside the summary/risk payload.
+- **Scenarios API**: Scenario results return `scenario_id`, `description`, and a `metrics` dict (`strategy`, `symbol`, `timeframe`, `params`, `cum_return`, `sharpe`, `max_drawdown`, `trade_count`) for a consistent contract-like structure.
 
 ## Related Documentation
 

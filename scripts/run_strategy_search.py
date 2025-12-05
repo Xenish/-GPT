@@ -31,7 +31,7 @@ if str(_project_root) not in sys.path:
 import finantradealgo.research.strategy_search.search_engine as se
 from finantradealgo.research.strategy_search.jobs import StrategySearchJobConfig
 from finantradealgo.strategies.strategy_engine import get_strategy_meta, get_searchable_strategies
-from finantradealgo.system.config_loader import load_config
+from finantradealgo.system.config_loader import load_config, load_config_from_env
 
 
 def build_parser():
@@ -45,9 +45,9 @@ def build_parser():
     parser.add_argument(
         "--profile",
         type=str,
-        default="research",
-        choices=["research"],
-        help="Config profile to load (only 'research' is allowed).",
+        default=None,
+        choices=["research", "live"],
+        help="Config profile to load (default: FINANTRADE_PROFILE or research).",
     )
     parser.add_argument(
         "--strategy",
@@ -165,7 +165,11 @@ def main(argv=None):
         return
 
     # Load system config
-    sys_cfg = load_config(args.profile)
+    sys_cfg = load_config(args.profile) if args.profile else load_config_from_env()
+    if sys_cfg.get("profile") != "research":
+        raise RuntimeError(
+            f"Strategy search must run with the 'research' profile. Got profile='{sys_cfg.get('profile')}'."
+        )
 
     # Validate profile
     cfg_profile = sys_cfg.get("profile", sys_cfg.get("mode", "unknown"))

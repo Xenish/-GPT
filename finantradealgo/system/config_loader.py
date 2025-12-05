@@ -3,7 +3,7 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Optional, List, Literal
+from typing import Any, Dict, Optional, List, Literal, cast
 import logging
 import os
 import yaml
@@ -125,8 +125,8 @@ class DataConfig:
 class WarehouseConfig:
     """Time-series warehouse configuration (Timescale/DuckDB)."""
 
-    backend: str = "timescale"
-    dsn_env: str = "FT_TIMESCALE_DSN"
+    backend: str = "none"
+    dsn_env: str = "FT_WAREHOUSE_DSN"
     ohlcv_table: str = "raw_ohlcv"
     funding_table: str = "raw_funding_rates"
     open_interest_table: str = "raw_open_interest"
@@ -135,10 +135,12 @@ class WarehouseConfig:
     live_batch_size: int = 500
 
     def get_dsn(self, allow_missing: bool = False) -> Optional[str]:
+        if self.backend == "none":
+            return None
         dsn = os.getenv(self.dsn_env, "").strip()
         if dsn:
             return dsn
-        if allow_missing:
+        if allow_missing or self.backend in ("csv", "duckdb"):
             return None
         raise RuntimeError(
             f"Warehouse backend '{self.backend}' requires env {self.dsn_env} to be set."
@@ -305,21 +307,20 @@ class KillSwitchConfig:
     @classmethod
     def from_dict(cls, data: Optional[Dict[str, Any]]) -> "KillSwitchConfig":
         data = data or {}
+        daily_pnl = float(data.get("daily_realized_pnl_limit", cls.daily_realized_pnl_limit))
+        max_dd = float(data.get("max_equity_drawdown_pct", cls.max_equity_drawdown_pct))
+        if max_dd < 0:
+            raise ValueError("max_equity_drawdown_pct must be non-negative")
+        eval_bars = int(data.get("evaluation_interval_bars", cls.evaluation_interval_bars))
+        if eval_bars <= 0:
+            raise ValueError("evaluation_interval_bars must be > 0")
         return cls(
             enabled=bool(data.get("enabled", cls.enabled)),
-            daily_realized_pnl_limit=float(
-                data.get("daily_realized_pnl_limit", cls.daily_realized_pnl_limit)
-            ),
-            max_equity_drawdown_pct=float(
-                data.get("max_equity_drawdown_pct", cls.max_equity_drawdown_pct)
-            ),
-            max_exceptions_per_hour=int(
-                data.get("max_exceptions_per_hour", cls.max_exceptions_per_hour)
-            ),
+            daily_realized_pnl_limit=daily_pnl,
+            max_equity_drawdown_pct=max_dd,
+            max_exceptions_per_hour=int(data.get("max_exceptions_per_hour", cls.max_exceptions_per_hour)),
             min_equity=float(data.get("min_equity", cls.min_equity)),
-            evaluation_interval_bars=int(
-                data.get("evaluation_interval_bars", cls.evaluation_interval_bars)
-            ),
+            evaluation_interval_bars=eval_bars,
         )
 
 
@@ -340,6 +341,47 @@ class ExchangeRiskConfig:
             max_position_contracts=float(
                 data.get("max_position_contracts", cls.max_position_contracts)
             ),
+        )
+
+
+@dataclass
+class RiskLimitsConfig:
+    risk_per_trade_pct: float = 0.01
+    max_position_notional: float = 0.0
+    max_position_contracts: float = 0.0
+    max_open_trades: int = 5
+    leverage_ceiling: float = 5.0
+    pyramiding_limit: int = 1
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "RiskLimitsConfig":
+        data = data or {}
+        risk_pct = float(
+            data.get(
+                "risk_per_trade_pct",
+                data.get("capital_risk_pct_per_trade", cls.risk_per_trade_pct),
+            )
+        )
+        if risk_pct <= 0:
+            raise ValueError("risk_per_trade_pct must be > 0")
+        max_pos_notional = float(
+            data.get("max_position_notional", data.get("max_notional_per_symbol", cls.max_position_notional))
+        )
+        max_pos_contracts = float(data.get("max_position_contracts", cls.max_position_contracts))
+        max_open = int(data.get("max_open_trades", cls.max_open_trades))
+        if max_open <= 0:
+            raise ValueError("max_open_trades must be > 0")
+        leverage_ceiling = float(data.get("leverage_ceiling", data.get("max_leverage", cls.leverage_ceiling)))
+        pyramiding = int(data.get("pyramiding_limit", cls.pyramiding_limit))
+        if pyramiding <= 0:
+            pyramiding = cls.pyramiding_limit
+        return cls(
+            risk_per_trade_pct=risk_pct,
+            max_position_notional=max_pos_notional,
+            max_position_contracts=max_pos_contracts,
+            max_open_trades=max_open,
+            leverage_ceiling=leverage_ceiling,
+            pyramiding_limit=pyramiding,
         )
 
 
@@ -441,6 +483,34 @@ class ResearchConfig:
         )
 
 
+@dataclass
+class MLConfig:
+    enabled: bool = True
+    targets: List[Dict[str, Any]] = field(default_factory=list)
+    proba_column: str = "ml_long_proba"
+    signal_column: str = "ml_long_signal"
+    model_dir: str = "outputs/ml_models"
+
+    @classmethod
+    def from_dict(cls, data: Optional[Dict[str, Any]]) -> "MLConfig":
+        data = data or {}
+        targets = data.get("targets", []) or []
+        valid_targets = []
+        for t in targets:
+            if isinstance(t, dict) and t.get("symbol") and t.get("timeframe"):
+                valid_targets.append({"symbol": str(t["symbol"]), "timeframe": str(t["timeframe"])})
+            else:
+                raise ValueError(f"Invalid ML target entry: {t}")
+
+        return cls(
+            enabled=bool(data.get("enabled", True)),
+            targets=valid_targets,
+            proba_column=data.get("proba_column", cls.proba_column),
+            signal_column=data.get("signal_column", cls.signal_column),
+            model_dir=data.get("model_dir", data.get("persistence", {}).get("model_dir", cls.model_dir)),
+        )
+
+
 DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
     "symbol": "BTCUSDT",
     "timeframe": "15m",
@@ -480,8 +550,8 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
         "backend_params": {},
     },
     "warehouse": {
-        "backend": "timescale",
-        "dsn": None,
+        "backend": "none",
+        "dsn_env": "FT_WAREHOUSE_DSN",
         "ohlcv_table": "raw_ohlcv",
         "funding_table": "raw_funding_rates",
         "open_interest_table": "raw_open_interest",
@@ -540,39 +610,11 @@ DEFAULT_SYSTEM_CONFIG: Dict[str, Any] = {
         "warmup_bars": 50,
     },
     "ml": {
-        "label": {
-            "method": "fixed_horizon",
-            "horizon_bars": 8,
-            "up_threshold": 0.004,
-            "down_threshold": -0.004,
-        },
-        "model": {
-            "type": "RandomForest",
-            "n_estimators": 200,
-            "max_depth": 6,
-            "min_samples_leaf": 50,
-            "random_state": 42,
-        },
-        "backtest": {
-            "proba_column": "ml_proba_long",
-            "proba_threshold": 0.55,
-            "proba_exit_threshold": 0.5,
-            "warmup_bars": 200,
-            "side": "long_only",
-            "allow_pipeline_mismatch": False,
-            "use_saved_model": False,
-            "model_id": None,
-        },
-        "persistence": {
-            "save_model": False,
-            "model_dir": "outputs/ml_models",
-            "use_registry": True,
-            "max_models_per_symbol_tf": 10,
-        },
-        "registry": {
-            "use_latest": True,
-            "selected_id": None,
-        },
+        "enabled": True,
+        "targets": [{"symbol": "BTCUSDT", "timeframe": "15m"}],
+        "proba_column": "ml_long_proba",
+        "signal_column": "ml_signal_long",
+        "model_dir": "outputs/ml_models",
     },
     "strategy": {
         "default": "rule",
@@ -815,6 +857,7 @@ def _load_system_config_impl(path: str | Path) -> Dict[str, Any]:
     merged["exchange_cfg"] = ExchangeConfig.from_dict(merged.get("exchange", {}))
     merged["exchange_risk_cfg"] = ExchangeRiskConfig.from_dict(merged.get("exchange", {}))
     merged["kill_switch_cfg"] = KillSwitchConfig.from_dict(merged.get("kill_switch", {}))
+    merged["risk_limits_cfg"] = RiskLimitsConfig.from_dict(merged.get("risk", {}))
     merged["live_cfg"] = LiveConfig.from_dict(
         merged.get("live"),
         default_symbol=merged.get("symbol"),
@@ -822,6 +865,7 @@ def _load_system_config_impl(path: str | Path) -> Dict[str, Any]:
     )
     merged["notifications_cfg"] = NotificationsConfig.from_dict(merged.get("notifications", {}))
     merged["research_cfg"] = ResearchConfig.from_dict(merged.get("research", {}))
+    merged["ml_cfg"] = MLConfig.from_dict(merged.get("ml", {}))
 
     # Create DataConfig and propagate source_timeframe for event bars
     merged["data_cfg"] = DataConfig.from_dict(merged.get("data", {}))
@@ -849,7 +893,42 @@ def load_config(profile: ProfileName) -> Dict[str, Any]:
         path = PROFILE_PATHS[profile]
     except KeyError:
         raise ValueError(f"Unknown profile: {profile!r}")
-    return _load_system_config_impl(path=path)
+    cfg = _load_system_config_impl(path=path)
+    # Run validation for all profiles
+    from finantradealgo.system.config_validation import validate_config
+
+    validate_config(cfg)
+    # Validation for live profile safety
+    if profile == "live":
+        exchange_type = cfg.get("exchange", {}).get("type", "").lower()
+        if exchange_type != "live":
+            raise RuntimeError("Live profile requires exchange.type='live'.")
+        live_cfg = cfg.get("live_cfg")
+        if live_cfg:
+            if len(live_cfg.symbols) != 1 or not live_cfg.symbol:
+                raise RuntimeError("Live profile must define exactly one symbol in live.symbols and live.symbol.")
+        risk_limits = cfg.get("risk_limits_cfg")
+        if risk_limits and risk_limits.max_open_trades <= 0:
+            raise RuntimeError("Live risk config must allow at least one open trade.")
+    return cfg
+
+
+def load_config_from_env(env_var: str = "FINANTRADE_PROFILE", default: ProfileName = "research") -> Dict[str, Any]:
+    """
+    Load system config using a profile resolved from environment.
+
+    Args:
+        env_var: Environment variable that holds the profile name.
+        default: Profile to use when env_var is not set.
+
+    Raises:
+        ValueError: If the resolved profile is not supported.
+    """
+    profile_raw = os.getenv(env_var, default) or default
+    profile = profile_raw.strip().lower()
+    if profile not in PROFILE_PATHS:
+        raise ValueError(f"Unknown profile: {profile!r} from env {env_var}")
+    return load_config(profile=cast(ProfileName, profile))
 
 
 def load_system_config(path: str | Path) -> Dict[str, Any]:
@@ -887,6 +966,7 @@ __all__ = [
     "PaperConfig",
     "PortfolioConfig",
     "ResearchConfig",
+    "MLConfig",
     "WarehouseConfig",
     "ExchangeConfig",
     "ExchangeRiskConfig",
@@ -894,4 +974,6 @@ __all__ = [
     "NotificationsConfig",
     "FCMConfig",
     "load_exchange_credentials",
+    "RiskLimitsConfig",
+    "load_config_from_env",
 ]

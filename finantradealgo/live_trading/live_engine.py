@@ -5,6 +5,7 @@ import logging
 import time
 from collections import defaultdict
 import datetime as dt
+from collections import deque
 import os
 from pathlib import Path
 from typing import Any, Dict, Optional, List
@@ -26,6 +27,7 @@ from finantradealgo.risk.risk_engine import RiskEngine
 from finantradealgo.system.config_loader import LiveConfig
 from finantradealgo.core.portfolio import Position
 from finantradealgo.system.kill_switch import KillSwitch, KillSwitchReason, KillSwitchState
+from finantradealgo.validation.live_validator import detect_suspect_bars
 
 
 class LiveEngine:
@@ -97,6 +99,8 @@ class LiveEngine:
         self.kill_switch_triggered_flag: bool = False
         self.kill_switch_triggered_reason: Optional[str] = None
         self.kill_switch_triggered_ts: Optional[pd.Timestamp] = None
+        self._recent_bars = deque(maxlen=500)
+        self.validation_issues: int = 0
         self.status: str = "RUNNING"
         self.is_running: bool = True
         self.is_paused: bool = False
@@ -273,6 +277,8 @@ class LiveEngine:
         if price is None or pd.isna(price) or ts_val is None:
             raise ValueError("Bar missing price or timestamp.")
         ts = pd.to_datetime(ts_val)
+        # Validation buffer for live suspect bar detection
+        self._recent_bars.append(row_series)
         return row_series, float(price), ts
 
     def _on_bar(self, bar: Bar | pd.Series) -> pd.Timestamp:
@@ -310,6 +316,18 @@ class LiveEngine:
         if self._evaluate_kill_switch(equity, day_key, ts):
             return ts
 
+        # Live validation of recent bars (lightweight)
+        if len(self._recent_bars) >= 10:
+            try:
+                df_recent = pd.DataFrame(list(self._recent_bars))
+                vr = detect_suspect_bars(df_recent.tail(100))
+                if vr.warnings_count > 0:
+                    self.validation_issues += vr.warnings_count
+                    self.logger.warning("Suspect bars detected: %s", vr.summary())
+            except Exception:
+                # Validation should not break live loop
+                self.logger.debug("Live validation skipped due to error.", exc_info=True)
+
         positions = self._refresh_positions()
 
         ctx = StrategyContext(
@@ -321,6 +339,8 @@ class LiveEngine:
         self._process_signal(signal, row_series, price, ts, day_key, positions)
 
         self.iteration += 1
+        # Heartbeat update every bar
+        self._update_heartbeat(ts)
         if self.save_state_every > 0 and self.iteration % self.save_state_every == 0:
             self._write_snapshot(ts)
         return ts
@@ -904,6 +924,7 @@ class LiveEngine:
             }
         else:
             snapshot["kill_switch"] = None
+        snapshot["validation_issues"] = self.validation_issues
         for target in {self.state_path, self.latest_state_path}:
             with target.open("w", encoding="utf-8") as fh:
                 json.dump(snapshot, fh, ensure_ascii=False, indent=2)

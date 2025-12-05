@@ -18,6 +18,7 @@ from finantradealgo.ml.model_registry import (
     get_latest_model,
     load_model_by_id,
 )
+from finantradealgo.ml.model import compute_feature_schema_hash
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
 from finantradealgo.system.config_loader import load_config
@@ -42,10 +43,11 @@ def _ensure_output_dirs() -> tuple[Path, Path]:
 
 
 def _load_model(sys_cfg: dict):
-    ml_cfg = sys_cfg.get("ml", {})
+    ml_cfg_obj = sys_cfg.get("ml_cfg") or {}
+    ml_cfg = sys_cfg.get("ml", {}) or {}
     persistence_cfg = ml_cfg.get("persistence", {}) or {}
     registry_cfg = ml_cfg.get("registry", {}) or {}
-    model_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
+    model_dir = getattr(ml_cfg_obj, "model_dir", None) or persistence_cfg.get("model_dir", "outputs/ml_models")
     selected_id = registry_cfg.get("selected_id")
 
     if selected_id:
@@ -67,10 +69,20 @@ def _load_model(sys_cfg: dict):
 def main() -> None:
     parser = argparse.ArgumentParser(description="Run ML inference backtest using a saved model.")
     parser.add_argument("--allow-version-mismatch", action="store_true", help="Allow mismatched pipeline versions.")
+    parser.add_argument("--model-id", type=str, help="Specific model id to load from registry.")
+    parser.add_argument("--symbol", type=str, help="Override symbol for latest-model lookup.")
+    parser.add_argument("--timeframe", type=str, help="Override timeframe for latest-model lookup.")
     args = parser.parse_args()
 
     sys_cfg = load_config("research")
-    ml_cfg = sys_cfg.get("ml", {})
+    ml_cfg_obj = sys_cfg.get("ml_cfg") or {}
+    ml_cfg = sys_cfg.get("ml", {}) or {}
+    if args.symbol:
+        sys_cfg["symbol"] = args.symbol
+    if args.timeframe:
+        sys_cfg["timeframe"] = args.timeframe
+    if args.model_id:
+        sys_cfg.setdefault("ml", {}).setdefault("registry", {})["selected_id"] = args.model_id
     model, meta = _load_model(sys_cfg)
 
     df, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
@@ -96,10 +108,23 @@ def main() -> None:
     log_run_header(symbol, timeframe, preset, current_version, extra=f"model_id={meta.model_id}")
 
     X = df[meta.feature_cols].to_numpy()
+    if getattr(meta, "feature_schema_hash", None):
+        current_hash = compute_feature_schema_hash(list(df[meta.feature_cols].columns))
+        if current_hash != meta.feature_schema_hash:
+            raise ValueError(
+                "Feature schema hash mismatch between model metadata and inference DataFrame. "
+                "Regenerate features or retrain the model."
+            )
+
     proba = model.predict_proba(X)
     if proba.shape[1] < 2:
         raise ValueError("Loaded model does not provide binary probabilities.")
-    proba_col = ml_cfg.get("backtest", {}).get("proba_column", "ml_proba_long")
+    proba_col = (
+        getattr(ml_cfg_obj, "proba_column", None)
+        or ml_cfg.get("backtest", {}).get("proba_column")
+        or ml_cfg.get("backtest", {}).get("proba_col")
+        or "ml_long_proba"
+    )
     df[proba_col] = proba[:, 1]
 
     ml_bt_cfg = MLStrategyConfig.from_dict(ml_cfg.get("backtest"))

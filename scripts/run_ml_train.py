@@ -17,6 +17,7 @@ from finantradealgo.ml.model import (
     SklearnLongModel,
     SklearnModelConfig,
     save_sklearn_model,
+    set_global_seed,
 )
 from finantradealgo.ml.model_registry import register_model
 from finantradealgo.system.config_loader import load_config
@@ -37,8 +38,35 @@ def main(
     symbol: Optional[str] = None,
     timeframe: Optional[str] = None,
     preset: Optional[str] = None,
+    target: Optional[str] = None,  # reserved for future multi-target support
+    seed: Optional[int] = None,
 ) -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Train ML model using research profile.")
+    parser.add_argument("--symbol", type=str, help="Override symbol")
+    parser.add_argument("--timeframe", type=str, help="Override timeframe")
+    parser.add_argument("--preset", type=str, help="Feature preset override")
+    parser.add_argument("--target", type=str, help="Target name (reserved for multi-target setups)")
+    parser.add_argument("--seed", type=int, help="Random seed (propagated to model random_state)")
+    parser.add_argument("--output-dir", type=str, help="Custom model output dir (defaults to ml.model_dir)")
+    args = parser.parse_args()
+
+    if symbol is None:
+        symbol = args.symbol
+    if timeframe is None:
+        timeframe = args.timeframe
+    if preset is None:
+        preset = args.preset
+    if target is None:
+        target = args.target
+    if seed is None:
+        seed = args.seed
+
     sys_cfg = load_config("research")
+    if seed is not None:
+        set_global_seed(seed)
+
     cfg = dict(sys_cfg)
     if symbol:
         cfg["symbol"] = symbol
@@ -56,7 +84,8 @@ def main(
     pipeline_version = pipeline_meta.get("pipeline_version", PIPELINE_VERSION)
     log_run_header(symbol, timeframe, preset, pipeline_version, extra="mode=train-only")
 
-    ml_cfg = cfg.get("ml", {})
+    ml_cfg_obj = cfg.get("ml_cfg") or {}
+    ml_cfg = cfg.get("ml", {}) or {}
     persistence_cfg = ml_cfg.get("persistence", {}) or {}
     feature_cols = pipeline_meta.get("feature_cols")
     if not feature_cols:
@@ -75,7 +104,10 @@ def main(
     X_train = df_train[feature_cols].to_numpy()
     y_train = df_train[target_col].to_numpy(dtype=int)
 
-    model_cfg = SklearnModelConfig.from_dict(ml_cfg.get("model"))
+    model_cfg_dict = dict(ml_cfg.get("model", {}) or {})
+    if seed is not None:
+        model_cfg_dict["random_state"] = seed
+    model_cfg = SklearnModelConfig.from_dict(model_cfg_dict)
     model = SklearnLongModel(model_cfg)
     model.fit(X_train, y_train)
 
@@ -88,7 +120,19 @@ def main(
 
     train_start = df_train["timestamp"].iloc[0]
     train_end = df_train["timestamp"].iloc[-1]
-    model_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
+    model_dir = args.output_dir or getattr(ml_cfg_obj, "model_dir", None) or persistence_cfg.get(
+        "model_dir", "outputs/ml_models"
+    )
+    config_snapshot = {
+        "profile": cfg.get("profile"),
+        "symbol": pipeline_meta.get("symbol", cfg.get("symbol", "BTCUSDT")),
+        "timeframe": pipeline_meta.get("timeframe", cfg.get("timeframe", "15m")),
+        "label": label_cfg.__dict__,
+        "model": model_cfg_dict,
+        "feature_preset": pipeline_meta.get("feature_preset", "extended"),
+        "feature_cols": feature_cols,
+    }
+
     meta = save_sklearn_model(
         model=model.clf,
         symbol=pipeline_meta.get("symbol", cfg.get("symbol", "BTCUSDT")),
@@ -102,6 +146,8 @@ def main(
         metrics={"train_size": len(df_train)},
         base_dir=model_dir,
         pipeline_version=pipeline_meta.get("pipeline_version", PIPELINE_VERSION),
+        seed=seed or model_cfg.random_state,
+        config_snapshot=config_snapshot,
     )
 
     if persistence_cfg.get("use_registry", True):

@@ -36,8 +36,8 @@ def get_ml_targets(cfg: Dict[str, Any]) -> List[Tuple[str, str]]:
         If ml.targets is empty or not specified, returns the first
         symbol and first timeframe from data.symbols and data.timeframes.
     """
-    ml_cfg = cfg.get("ml", {}) or {}
-    targets = ml_cfg.get("targets", [])
+    ml_cfg = cfg.get("ml_cfg") or cfg.get("ml", {}) or {}
+    targets = getattr(ml_cfg, "targets", None) or ml_cfg.get("targets", [])
 
     # If targets explicitly configured, use them
     if targets:
@@ -88,5 +88,7 @@ def is_ml_enabled(cfg: Dict[str, Any]) -> bool:
     Returns:
         True if ML is enabled, False otherwise
     """
-    ml_cfg = cfg.get("ml", {}) or {}
+    ml_cfg = cfg.get("ml_cfg") or cfg.get("ml", {}) or {}
+    if hasattr(ml_cfg, "enabled"):
+        return bool(getattr(ml_cfg, "enabled"))
     return ml_cfg.get("enabled", True)  # Default to enabled for backward compatibility

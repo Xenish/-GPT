@@ -11,9 +11,13 @@ from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 import pandas as pd
+
+MetricValue = Union[float, int, str]
+Metrics = Dict[str, MetricValue]
+Artifacts = Dict[str, str]
 
 
 class ReportFormat(str, Enum):
@@ -24,6 +28,31 @@ class ReportFormat(str, Enum):
     JSON = "json"
 
 
+class ReportProfile(str, Enum):
+    """Report execution context."""
+
+    RESEARCH = "research"
+    LIVE = "live"
+
+
+def _serialize_data_value(value: Any) -> Any:
+    """Convert data payloads to JSON-friendly structures."""
+    if isinstance(value, pd.DataFrame):
+        return {
+            "__type__": "dataframe",
+            "columns": list(value.columns),
+            "data": value.to_dict(orient="records"),
+        }
+    return value
+
+
+def _deserialize_data_value(value: Any) -> Any:
+    """Restore structured data from serialized payloads."""
+    if isinstance(value, dict) and value.get("__type__") == "dataframe":
+        return pd.DataFrame(value["data"], columns=value.get("columns"))
+    return value
+
+
 @dataclass
 class ReportSection:
     """
@@ -32,16 +61,20 @@ class ReportSection:
     Attributes:
         title: Section title
         content: Section content (text/markdown)
-        subsections: Nested subsections
+        metrics: Key metrics for the section (JSON-friendly)
+        artifacts: Links/paths to section-level artifacts (charts, tables, etc.)
         data: Structured data (tables, metrics)
         metadata: Additional metadata
+        subsections: Nested subsections
     """
 
     title: str
     content: Optional[str] = ""
-    subsections: List["ReportSection"] = field(default_factory=list)
+    metrics: Metrics = field(default_factory=dict)
+    artifacts: Artifacts = field(default_factory=dict)
     data: Optional[Dict[str, Any]] = None
     metadata: Optional[Dict[str, Any]] = None
+    subsections: List["ReportSection"] = field(default_factory=list)
 
     def to_markdown(self, level: int = 1) -> str:
         """
@@ -62,6 +95,20 @@ class ReportSection:
         # Content
         if self.content:
             lines.append(self.content)
+            lines.append("")
+
+        # Metrics
+        if self.metrics:
+            lines.append("**Metrics:**")
+            for key, value in self.metrics.items():
+                lines.append(f"- {key}: {value}")
+            lines.append("")
+
+        # Artifacts
+        if self.artifacts:
+            lines.append("**Artifacts:**")
+            for key, value in self.artifacts.items():
+                lines.append(f"- {key}: {value}")
             lines.append("")
 
         # Data tables
@@ -105,9 +152,24 @@ class ReportSection:
 
         # Content
         if self.content:
-            # Simple markdown-to-HTML conversion (basic)
             content_html = self.content.replace("\n\n", "</p><p>")
             lines.append(f"<p>{content_html}</p>")
+
+        # Metrics
+        if self.metrics:
+            lines.append(f"<h{h_level + 1}>Metrics</h{h_level + 1}>")
+            lines.append("<ul>")
+            for key, value in self.metrics.items():
+                lines.append(f"<li><strong>{key}</strong>: {value}</li>")
+            lines.append("</ul>")
+
+        # Artifacts
+        if self.artifacts:
+            lines.append(f"<h{h_level + 1}>Artifacts</h{h_level + 1}>")
+            lines.append("<ul>")
+            for key, value in self.artifacts.items():
+                lines.append(f"<li><strong>{key}</strong>: {value}</li>")
+            lines.append("</ul>")
 
         # Data tables
         if self.data:
@@ -130,10 +192,15 @@ class ReportSection:
 
     def to_dict(self) -> Dict[str, Any]:
         """Serialize section to dictionary (JSON-friendly)."""
+        serialized_data = None
+        if self.data is not None:
+            serialized_data = {key: _serialize_data_value(value) for key, value in self.data.items()}
         return {
             "title": self.title,
             "content": self.content,
-            "data": self.data,
+            "metrics": self.metrics,
+            "artifacts": self.artifacts,
+            "data": serialized_data,
             "metadata": self.metadata,
             "subsections": [s.to_dict() for s in self.subsections],
         }
@@ -142,10 +209,16 @@ class ReportSection:
     def from_dict(cls, data: Dict[str, Any]) -> "ReportSection":
         """Deserialize section from dictionary."""
         subsections = [cls.from_dict(s) for s in data.get("subsections", []) or []]
+        raw_data = data.get("data")
+        parsed_data = None
+        if raw_data is not None:
+            parsed_data = {key: _deserialize_data_value(value) for key, value in raw_data.items()}
         return cls(
             title=data["title"],
             content=data.get("content"),
-            data=data.get("data"),
+            metrics=data.get("metrics") or {},
+            artifacts=data.get("artifacts") or {},
+            data=parsed_data,
             metadata=data.get("metadata"),
             subsections=subsections,
         )
@@ -159,6 +232,14 @@ class Report:
     Attributes:
         title: Report title
         description: Report description
+        job_id: Batch or orchestration job identifier
+        run_id: Unique execution identifier (per run / live session)
+        profile: Execution profile (research or live)
+        strategy_id: Strategy identifier (rule, ml, trend_continuation, etc.)
+        symbol: Trading symbol
+        timeframe: Bar timeframe (e.g., 15m, 1h)
+        metrics: Key metrics for the full report
+        artifacts: Links/paths to artifacts (equity_csv, trades_csv, heatmap_html, etc.)
         created_at: Creation timestamp
         sections: Report sections
         metadata: Report metadata
@@ -166,6 +247,14 @@ class Report:
 
     title: str
     description: str = ""
+    job_id: Optional[str] = None
+    run_id: Optional[str] = None
+    profile: Optional[ReportProfile] = None
+    strategy_id: Optional[str] = None
+    symbol: Optional[str] = None
+    timeframe: Optional[str] = None
+    metrics: Metrics = field(default_factory=dict)
+    artifacts: Artifacts = field(default_factory=dict)
     created_at: datetime = field(default_factory=lambda: datetime.now(timezone.utc))
     sections: List[ReportSection] = field(default_factory=list)
     metadata: Optional[Dict[str, Any]] = None
@@ -188,6 +277,33 @@ class Report:
 
         if self.description:
             lines.append(f"{self.description}\n")
+
+        context_items = [
+            ("Profile", self.profile.value if isinstance(self.profile, ReportProfile) else self.profile),
+            ("Job ID", self.job_id),
+            ("Run ID", self.run_id),
+            ("Strategy", self.strategy_id),
+            ("Symbol", self.symbol),
+            ("Timeframe", self.timeframe),
+        ]
+        context_items = [(k, v) for k, v in context_items if v is not None]
+        if context_items:
+            lines.append("**Context:**")
+            for key, value in context_items:
+                lines.append(f"- {key}: {value}")
+            lines.append("")
+
+        if self.metrics:
+            lines.append("**Metrics:**")
+            for key, value in self.metrics.items():
+                lines.append(f"- {key}: {value}")
+            lines.append("")
+
+        if self.artifacts:
+            lines.append("**Artifacts:**")
+            for key, value in self.artifacts.items():
+                lines.append(f"- {key}: {value}")
+            lines.append("")
 
         lines.append(f"**Generated**: {self.created_at.strftime('%Y-%m-%d %H:%M:%S UTC')}\n")
         lines.append("---\n")
@@ -227,7 +343,8 @@ class Report:
         # CSS
         if include_css:
             lines.append("<style>")
-            lines.append("""
+            lines.append(
+                """
                 body {
                     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
                     line-height: 1.6;
@@ -253,7 +370,8 @@ class Report:
                 .timestamp { color: #7f8c8d; font-size: 0.9em; }
                 ul { margin: 10px 0; }
                 li { margin: 5px 0; }
-            """)
+            """
+            )
             lines.append("</style>")
 
         lines.append("</head>")
@@ -265,6 +383,37 @@ class Report:
 
         if self.description:
             lines.append(f"<p>{self.description}</p>")
+
+        context_items = [
+            ("Profile", self.profile.value if isinstance(self.profile, ReportProfile) else self.profile),
+            ("Job ID", self.job_id),
+            ("Run ID", self.run_id),
+            ("Strategy", self.strategy_id),
+            ("Symbol", self.symbol),
+            ("Timeframe", self.timeframe),
+        ]
+        context_items = [(k, v) for k, v in context_items if v is not None]
+        if context_items or self.metrics or self.artifacts:
+            lines.append('<div class="metadata">')
+            if context_items:
+                lines.append("<h3>Context</h3>")
+                lines.append("<ul>")
+                for key, value in context_items:
+                    lines.append(f"<li><strong>{key}</strong>: {value}</li>")
+                lines.append("</ul>")
+            if self.metrics:
+                lines.append("<h3>Metrics</h3>")
+                lines.append("<ul>")
+                for key, value in self.metrics.items():
+                    lines.append(f"<li><strong>{key}</strong>: {value}</li>")
+                lines.append("</ul>")
+            if self.artifacts:
+                lines.append("<h3>Artifacts</h3>")
+                lines.append("<ul>")
+                for key, value in self.artifacts.items():
+                    lines.append(f"<li><strong>{key}</strong>: {value}</li>")
+                lines.append("</ul>")
+            lines.append("</div>")
 
         lines.append(f'<p class="timestamp"><strong>Generated</strong>: {self.created_at.strftime("%Y-%m-%d %H:%M:%S UTC")}</p>')
         lines.append("<hr>")
@@ -304,6 +453,14 @@ class Report:
         return {
             "title": self.title,
             "description": self.description,
+            "job_id": self.job_id,
+            "run_id": self.run_id,
+            "profile": self.profile.value if isinstance(self.profile, ReportProfile) else self.profile,
+            "strategy_id": self.strategy_id,
+            "symbol": self.symbol,
+            "timeframe": self.timeframe,
+            "metrics": self.metrics,
+            "artifacts": self.artifacts,
             "created_at": self.created_at.isoformat(),
             "sections": [section.to_dict() for section in self.sections],
             "metadata": self.metadata,
@@ -318,9 +475,19 @@ class Report:
         else:
             created_at = created_at_raw or datetime.now(timezone.utc)
         sections = [ReportSection.from_dict(s) for s in data.get("sections", []) or []]
+        raw_profile = data.get("profile")
+        profile = ReportProfile(raw_profile) if raw_profile in {p.value for p in ReportProfile} else raw_profile
         return cls(
             title=data["title"],
             description=data.get("description", ""),
+            job_id=data.get("job_id"),
+            run_id=data.get("run_id"),
+            profile=profile,
+            strategy_id=data.get("strategy_id"),
+            symbol=data.get("symbol"),
+            timeframe=data.get("timeframe"),
+            metrics=data.get("metrics") or {},
+            artifacts=data.get("artifacts") or {},
             created_at=created_at,
             sections=sections,
             metadata=data.get("metadata"),
@@ -345,6 +512,7 @@ class Report:
             suffix = ".html"
         elif format == ReportFormat.JSON:
             import json
+
             content = json.dumps(self.to_json(), indent=2)
             suffix = ".json"
         else:
@@ -406,5 +574,6 @@ __all__ = [
     "Report",
     "ReportSection",
     "ReportFormat",
+    "ReportProfile",
     "ReportGenerator",
 ]

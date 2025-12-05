@@ -1,98 +1,72 @@
 """
-Generates the golden file for backtest regression tests.
-Run this after making algorithmic changes that affect backtest results.
+Generate golden backtest fixtures for regression tests.
+
+Usage:
+    python scripts/generate_backtest_golden.py
+
+Outputs:
+    tests/golden/ema_cross_synthetic.json
 """
+from __future__ import annotations
+
 import json
-import os
-import sys
 from pathlib import Path
 
-# Set dummy FCM key for testing if not already set
-if "FCM_SERVER_KEY" not in os.environ:
-    os.environ["FCM_SERVER_KEY"] = "dummy_key_for_testing"
+import numpy as np
+import pandas as pd
 
-# Ensure project root is in Python path
+from finantradealgo.backtester.backtest_engine import BacktestEngine, BacktestConfig
+from finantradealgo.risk.risk_engine import RiskEngine, RiskConfig
+from finantradealgo.strategies.ema_cross import EMACrossStrategy
+
 ROOT = Path(__file__).resolve().parents[1]
-if str(ROOT) not in sys.path:
-    sys.path.append(str(ROOT))
-
-from finantradealgo.backtester.backtest_engine import BacktestEngine
-from finantradealgo.features.feature_pipeline import build_feature_pipeline_from_system_config
-from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
-from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
-from finantradealgo.strategies.rule_signals import RuleSignalStrategy, RuleStrategyConfig
-from finantradealgo.system.config_loader import load_config
-from tests.utils_ml import prepare_ml_eval_df
-
-GOLDEN_PATH = ROOT / "tests" / "golden" / "regression_rule_ml_15m.json"
-REGRESSION_WINDOW = 1000
+GOLDEN_DIR = ROOT / "tests" / "golden"
+GOLDEN_DIR.mkdir(parents=True, exist_ok=True)
 
 
-def generate_golden_file():
-    """Generate golden file with current backtest results."""
-    print("Loading system config...")
-    cfg = load_config("research")
-
-    print("Building feature pipeline...")
-    df_full, meta = build_feature_pipeline_from_system_config(cfg)
-    df_window = df_full.tail(REGRESSION_WINDOW).reset_index(drop=True)
-
-    print("Preparing ML evaluation data...")
-    df_eval, proba_col = prepare_ml_eval_df(df_window, meta, cfg)
-    assert proba_col in df_eval.columns
-
-    risk_cfg = RiskConfig.from_dict(cfg.get("risk", {}))
-
-    # Run Rule Strategy Backtest
-    print("Running rule strategy backtest...")
-    rule_strategy = RuleSignalStrategy(RuleStrategyConfig.from_dict(cfg.get("rule", {})))
-    rule_engine = BacktestEngine(
-        strategy=rule_strategy,
-        risk_engine=RiskEngine(risk_cfg),
-        price_col="close",
-        timestamp_col="timestamp",
+def _make_price_series():
+    idx = pd.date_range("2025-01-01 00:00:00", periods=200, freq="1min", tz="UTC")
+    prices = 100 + np.sin(np.linspace(0, 10, len(idx))) * 2 + np.linspace(0, 5, len(idx))
+    df = pd.DataFrame(
+        {
+            "timestamp": idx,
+            "open": prices,
+            "high": prices + 0.5,
+            "low": prices - 0.5,
+            "close": prices + 0.1,
+            "volume": 1000,
+        }
     )
-    rule_result = rule_engine.run(df_eval)
+    return df.reset_index(drop=True)
 
-    # Run ML Strategy Backtest
-    print("Running ML strategy backtest...")
-    ml_strategy_cfg = MLStrategyConfig.from_dict(cfg.get("ml", {}).get("backtest", {}))
-    assert ml_strategy_cfg.proba_col == proba_col
-    ml_strategy = MLSignalStrategy(ml_strategy_cfg)
-    ml_engine = BacktestEngine(
-        strategy=ml_strategy,
-        risk_engine=RiskEngine(risk_cfg),
-        price_col="close",
-        timestamp_col="timestamp",
+
+def generate_ema_cross_synthetic():
+    df = _make_price_series()
+    engine = BacktestEngine(
+        strategy=EMACrossStrategy(fast=5, slow=15),
+        risk_engine=RiskEngine(RiskConfig()),
+        config=BacktestConfig(initial_cash=10_000.0),
     )
-    ml_result = ml_engine.run(df_eval)
-
-    # Extract metrics
-    rule_metrics = rule_result["metrics"]
-    ml_metrics = ml_result["metrics"]
-
-    # Create golden payload
-    golden = {
-        "rule": {
-            "final_equity": rule_metrics["final_equity"],
-            "trade_count": rule_metrics["trade_count"],
-        },
-        "ml": {
-            "final_equity": ml_metrics["final_equity"],
-            "trade_count": ml_metrics["trade_count"],
+    res = engine.run(df)
+    payload = {
+        "metrics": res["metrics"],
+        "meta": {
+            "strategy": "ema_cross",
+            "symbol": "SYNTH",
+            "timeframe": "1m",
+            "bars": len(df),
+            "generated_by": "scripts/generate_backtest_golden.py",
         },
     }
+    path = GOLDEN_DIR / "ema_cross_synthetic.json"
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(payload, f, indent=2)
+    print(f"Wrote {path}")
 
-    # Save to golden file
-    print(f"Saving golden file to: {GOLDEN_PATH}")
-    GOLDEN_PATH.parent.mkdir(exist_ok=True)
-    with GOLDEN_PATH.open("w", encoding="utf-8") as f:
-        json.dump(golden, f, indent=2)
 
-    print("\nGolden file generated successfully!")
-    print(f"Rule - Final Equity: {rule_metrics['final_equity']:.2f}, Trade Count: {rule_metrics['trade_count']}")
-    print(f"ML   - Final Equity: {ml_metrics['final_equity']:.2f}, Trade Count: {ml_metrics['trade_count']}")
+def main():
+    generate_ema_cross_synthetic()
 
 
 if __name__ == "__main__":
-    generate_golden_file()
+    main()

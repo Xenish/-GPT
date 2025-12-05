@@ -80,7 +80,9 @@ export default function HomePage() {
     sendLiveCommand,
   } = useChartStore();
 
-  const [activeTab, setActiveTab] = useState<"single" | "portfolio" | "live" | "lab" | "ml" | "research">("single");
+  const [activeTab, setActiveTab] = useState<"research" | "strategy-search" | "live" | "portfolio" | "montecarlo">(
+    "research"
+  );
   const [researchSubTab, setResearchSubTab] = useState<"scenarios" | "jobs">("scenarios");
 
   // ML Lab: separate symbol/timeframe selection filtered by ml_targets
@@ -227,31 +229,16 @@ export default function HomePage() {
     <main className="min-h-screen px-6 py-4 flex flex-col gap-4 bg-slate-50">
       <div className="flex gap-3 border-b pb-2 text-sm">
         <button
-          className={`px-2 ${activeTab === "single" ? "font-semibold border-b-2 border-blue-500" : ""}`}
-          onClick={() => setActiveTab("single")}
+          className={`px-2 ${activeTab === "research" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => setActiveTab("research")}
         >
-          Single Backtests
+          Research / Backtests
         </button>
         <button
-          className={`px-2 ${activeTab === "portfolio" ? "font-semibold border-b-2 border-blue-500" : ""}`}
-          onClick={() => {
-            setActiveTab("portfolio");
-            fetchPortfolioRuns();
-          }}
+          className={`px-2 ${activeTab === "strategy-search" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => setActiveTab("strategy-search")}
         >
-          Portfolio
-        </button>
-        <button
-          className={`px-2 ${activeTab === "lab" ? "font-semibold border-b-2 border-blue-500" : ""}`}
-          onClick={() => setActiveTab("lab")}
-        >
-          Strategy Lab
-        </button>
-        <button
-          className={`px-2 ${activeTab === "ml" ? "font-semibold border-b-2 border-blue-500" : ""}`}
-          onClick={() => setActiveTab("ml")}
-        >
-          ML Lab
+          Strategy Search
         </button>
         <button
           className={`px-2 ${activeTab === "live" ? "font-semibold border-b-2 border-blue-500" : ""}`}
@@ -260,14 +247,17 @@ export default function HomePage() {
           Live
         </button>
         <button
-          className={`px-2 ${activeTab === "research" ? "font-semibold border-b-2 border-blue-500" : ""}`}
-          onClick={() => setActiveTab("research")}
+          className={`px-2 ${activeTab === "portfolio" ? "font-semibold border-b-2 border-blue-500" : ""}`}
+          onClick={() => {
+            setActiveTab("portfolio");
+            fetchPortfolioRuns();
+          }}
         >
-          Research
+          Portfolio / Monte Carlo
         </button>
       </div>
 
-      {activeTab === "single" && (
+      {activeTab === "research" && (
         <>
           <header className="flex items-center gap-4 flex-wrap">
             <h1 className="text-xl font-bold">FinanTrade Chart</h1>
@@ -513,7 +503,7 @@ export default function HomePage() {
         </>
       )}
 
-      {activeTab === "lab" && (
+      {activeTab === "strategy-search" && (
         <section className="space-y-4">
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-2">
@@ -669,7 +659,7 @@ export default function HomePage() {
         </section>
       )}
 
-      {activeTab === "ml" && (
+      {activeTab === "strategy-search" && (
         <section className="space-y-3">
           <div className="flex flex-wrap items-center gap-4 text-sm">
             <label className="flex items-center gap-2">

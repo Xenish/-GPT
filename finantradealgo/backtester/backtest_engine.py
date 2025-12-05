@@ -9,6 +9,7 @@ import pandas as pd
 from finantradealgo.core.portfolio import Portfolio, Position
 from finantradealgo.core.strategy import BaseStrategy, SignalType, StrategyContext
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
+from finantradealgo.system.kill_switch import KillSwitch, KillSwitchState
 
 
 @dataclass
@@ -27,10 +28,13 @@ class Backtester:
         strategy: BaseStrategy,
         risk_engine: Optional[RiskEngine] = None,
         config: Optional[BacktestConfig] = None,
+        kill_switch: Optional[KillSwitch] = None,
     ):
         self.strategy = strategy
         self.risk_engine = risk_engine or RiskEngine(RiskConfig())
         self.config = config or BacktestConfig()
+        self.kill_switch = kill_switch
+        self.kill_state: Optional[KillSwitchState] = None
 
     def run(self, df: pd.DataFrame) -> Dict[str, Any]:
         if df.empty:
@@ -41,12 +45,16 @@ class Backtester:
             cash=self.config.initial_cash,
             equity=self.config.initial_cash,
         )
+        if self.kill_switch:
+            # Seed peak equity to starting equity for drawdown checks
+            self.kill_switch.state.peak_equity = portfolio.equity
 
         self.strategy.init(df)
         trades = []
         daily_realized_pnl: Dict[pd.Timestamp, float] = defaultdict(float)
         daily_blocked_entries: Dict[pd.Timestamp, int] = defaultdict(int)
         equity_start_of_day: Dict[pd.Timestamp, float] = {}
+        kill_triggered = False
 
         for i, row in df.iterrows():
             price_close = float(row["close"])
@@ -118,6 +126,18 @@ class Backtester:
             )
 
             signal: SignalType = self.strategy.on_bar(row, ctx)
+
+            # Kill switch evaluation
+            if self.kill_switch and not kill_triggered:
+                ks_state = self.kill_switch.evaluate(
+                    now=ts.to_pydatetime(),
+                    equity=portfolio.equity,
+                    daily_realized_pnl=daily_realized_pnl.get(day_key, 0.0),
+                )
+                self.kill_state = ks_state
+                if ks_state.is_triggered:
+                    kill_triggered = True
+                    break
 
             if portfolio.position is None:
                 if signal == "LONG":
@@ -199,6 +219,16 @@ class Backtester:
                                 continue
 
             portfolio.record(ts, price_close)
+            if self.kill_switch and not kill_triggered:
+                ks_state = self.kill_switch.evaluate(
+                    now=ts.to_pydatetime(),
+                    equity=portfolio.equity,
+                    daily_realized_pnl=daily_realized_pnl.get(day_key, 0.0),
+                )
+                self.kill_state = ks_state
+                if ks_state.is_triggered:
+                    kill_triggered = True
+                    break
 
         if portfolio.position is not None:
             last_row = df.iloc[-1]
@@ -215,10 +245,25 @@ class Backtester:
                 daily_realized_pnl[exit_day] += float(pnl)
             portfolio.record(last_row["timestamp"], float(last_row["close"]))
 
+        if self.kill_switch and not (self.kill_state and self.kill_state.is_triggered):
+            last_ts = pd.to_datetime(df.iloc[-1]["timestamp"])
+            worst_pnl = min(daily_realized_pnl.values()) if daily_realized_pnl else 0.0
+            self.kill_state = self.kill_switch.evaluate(
+                now=last_ts.to_pydatetime(),
+                equity=portfolio.equity,
+                daily_realized_pnl=worst_pnl,
+            )
+
         risk_stats = {
             "daily_realized_pnl": {str(k.date()): v for k, v in daily_realized_pnl.items()},
             "blocked_entries": {str(k.date()): v for k, v in daily_blocked_entries.items()},
         }
+        if self.kill_state:
+            risk_stats["kill_switch"] = {
+                "triggered": self.kill_state.is_triggered,
+                "reason": str(self.kill_state.reason),
+                "trigger_time": self.kill_state.trigger_time.isoformat() if self.kill_state.trigger_time else None,
+            }
 
         result = self._build_result(portfolio, trades, risk_stats)
         return result

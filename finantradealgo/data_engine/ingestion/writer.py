@@ -14,8 +14,54 @@ from finantradealgo.data_engine.ingestion.models import (
     SentimentSignal,
     ensure_timestamp,
 )
+from finantradealgo.system.config_loader import WarehouseConfig
 
 logger = logging.getLogger(__name__)
+
+
+class NullWarehouse:
+    """No-op warehouse writer for non-DB backends."""
+
+    def __init__(self, *args, **kwargs) -> None:
+        pass
+
+    def upsert_ohlcv(self, candles: Sequence[IngestCandle]) -> int:
+        logger.debug("NullWarehouse.upsert_ohlcv called, skipping write.")
+        return 0
+
+    def upsert_funding(self, rows: Sequence[FundingRate]) -> int:
+        logger.debug("NullWarehouse.upsert_funding called, skipping write.")
+        return 0
+
+    def upsert_open_interest(self, rows: Sequence[OpenInterestSnapshot]) -> int:
+        logger.debug("NullWarehouse.upsert_open_interest called, skipping write.")
+        return 0
+
+    def upsert_flow(self, rows: Sequence[FlowSnapshot]) -> int:
+        logger.debug("NullWarehouse.upsert_flow called, skipping write.")
+        return 0
+
+    def upsert_sentiment(self, rows: Sequence[SentimentSignal]) -> int:
+        logger.debug("NullWarehouse.upsert_sentiment called, skipping write.")
+        return 0
+
+    def get_latest_ts(self, symbol: str, timeframe: str) -> Optional[pd.Timestamp]:
+        return None
+
+    def get_span(self, symbol: str, timeframe: str) -> tuple[Optional[pd.Timestamp], Optional[pd.Timestamp], int]:
+        return None, None, 0
+
+    def detect_gaps(
+        self,
+        symbol: str,
+        timeframe: str,
+        start_ts: pd.Timestamp,
+        end_ts: pd.Timestamp,
+        step_seconds: int,
+        *,
+        max_gaps: int = 50,
+    ) -> list[tuple[pd.Timestamp, pd.Timestamp]]:
+        return []
 
 
 class TimescaleWarehouse:
@@ -290,3 +336,27 @@ class TimescaleWarehouse:
             self._conn.close()
         except Exception:
             pass
+
+
+def build_warehouse_writer(cfg) -> TimescaleWarehouse | NullWarehouse:
+    """Factory to build a warehouse writer based on WarehouseConfig."""
+    wh_cfg: WarehouseConfig = cfg.get("warehouse_cfg") if isinstance(cfg, dict) else cfg
+    backend = getattr(wh_cfg, "backend", "none") or "none"
+    backend = backend.lower()
+    if backend.lower() in ("timescale", "postgres"):
+        dsn = wh_cfg.get_dsn(allow_missing=False)
+        table_map = {
+            "ohlcv": wh_cfg.ohlcv_table,
+            "funding": wh_cfg.funding_table,
+            "open_interest": wh_cfg.open_interest_table,
+            "flow": wh_cfg.flow_table,
+            "sentiment": wh_cfg.sentiment_table,
+        }
+        return TimescaleWarehouse(dsn, table_map=table_map, batch_size=wh_cfg.live_batch_size)
+    if backend == "csv":
+        raise ValueError("Warehouse backend 'csv' is not implemented for ingestion; use 'none' or 'timescale'.")
+    if backend == "duckdb":
+        raise ValueError("Warehouse backend 'duckdb' is not implemented for ingestion; use 'none' or 'timescale'.")
+    if backend in ("none",):
+        return NullWarehouse()
+    raise ValueError(f"Unsupported warehouse backend: {backend}")

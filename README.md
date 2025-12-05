@@ -38,6 +38,20 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
+## CI Sözleşmesi (V1)
+CI şu kontrolleri çalıştırır:
+1) Lint: `ruff check finantradealgo services tests scripts` ve `black --check ...`
+2) Typecheck: `mypy --config-file mypy.ini finantradealgo/system finantradealgo/risk finantradealgo/live_trading`
+3) Test + coverage: `pytest -m "not slow" --cov=finantradealgo --cov=services --cov-report=xml --cov-report=term-missing --cov-fail-under=60`
+4) Config/risk guardrails: `python scripts/check_config_sanity.py`, `python scripts/check_strategy_dependency.py`, `python scripts/check_research_imports.py`
+5) CLI smoke: `pytest -q tests/test_run_*_cli_*.py tests/test_run_test_risk_overlays_rg1.py`
+6) DB integration (eğer `FT_TIMESCALE_DSN` veya `FT_POSTGRES_DSN` secret'ı tanımlıysa): `alembic history -q` + `pytest -m "db"`; normal PR CI'da DB testleri skip edilir.
+Hepsinin geçmesi gerekir; coverage XML artefakt olarak yüklenir.
+Branch protection önerisi: main/master için yukarıdaki CI check'leri zorunlu status check olarak tanımlayın (lint, typecheck, backend+coverage, guardrails, CLI smoke; varsa DB job).
+
+### Lokal kalite
+- `pip install pre-commit && pre-commit install` ile aynı lint/format kurallarını commit öncesi çalıştırabilirsiniz.
+
 ## Hızlı Başlangıç
 ### Data / Feature
 ```bash
@@ -93,6 +107,22 @@ cp .env.example .env
 # BINANCE_FUTURES_API_KEY / BINANCE_FUTURES_API_SECRET değerlerini doldurun
 # Ardından `source .env` (Linux/macOS) veya `Set-Content Env:*` (Windows) ile env'e yükleyin
 ```
+
+### Config profilleri (research vs live)
+- Profiller: `research` backtest/research içindir, `live` paper/exchange içindir. Ortak ayarlar `config/system.base.yml`'de, profil farkları `config/system.research.yml` ve `config/system.live.yml` içinde override edilir.
+- Tek giriş noktası: YAML doğrudan okunmaz, her zaman loader kullanılır.
+  ```python
+  from finantradealgo.system.config_loader import load_config, load_config_from_env
+
+  cfg = load_config("research")          # profil ismiyle
+  cfg = load_config_from_env()           # FINANTRADE_PROFILE env (yoksa research)
+  ```
+- Profil seçimi: CLI/script parametresi vermeden ortamdan seçmek için:
+  ```bash
+  export FINANTRADE_PROFILE=live   # veya research
+  ```
+  `--profile` verilmezse tüm CLI/script akışları bu env'i dikkate alır.
+- Güvenlik: Config her yüklemede validate edilir (required alanlar, aralıklar, live güvenlik). Hatalı kombinasyonlar yükleme aşamasında patlar.
 
 Testnet dry-run:
 ```bash

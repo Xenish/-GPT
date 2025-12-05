@@ -169,6 +169,14 @@ type ChartState = {
   setSymbol: (symbol: string) => void;
   setTimeframe: (tf: string) => void;
   setSelectedStrategy: (strategy: string) => void;
+  selectedJobId: string | null;
+  setSelectedJobId: (id: string | null) => void;
+  selectedReport: Record<string, any> | null;
+  setSelectedReport: (report: Record<string, any> | null) => void;
+  selectedJobId: string | null;
+  setSelectedJobId: (id: string | null) => void;
+  selectedReport: Record<string, any> | null;
+  setSelectedReport: (report: Record<string, any> | null) => void;
   setBacktests: (runs: BacktestRunInfo[]) => void;
   setSelectedRunId: (runId: string | null) => void;
   setTrades: (trades: TradeRow[]) => void;
@@ -179,6 +187,8 @@ type ChartState = {
   setOverlays: (partial: Partial<ChartState["overlays"]>) => void;
   setLoading: (loading: boolean) => void;
   setError: (msg: string | null) => void;
+  setSelectedJobId: (id: string | null) => void;
+  setSelectedReport: (report: Record<string, any> | null) => void;
   setLiveStatus: (status: LiveStatus | null) => void;
   setIsLiveLoading: (flag: boolean) => void;
   setLiveError: (msg: string | null) => void;
@@ -221,6 +231,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   availableStrategies: [],
   lookbackDaysByTf: null,
   mlTargets: [],
+  selectedJobId: null,
+  selectedReport: null,
   ruleParams: {},
   scenarioResults: [],
   selectedScenarioId: null,
@@ -266,6 +278,8 @@ export const useChartStore = create<ChartState>((set, get) => ({
   setOverlays: (partial) => set((state) => ({ overlays: { ...state.overlays, ...partial } })),
   setLoading: (loading) => set({ loading }),
   setError: (error) => set({ error }),
+  setSelectedJobId: (id) => set({ selectedJobId: id }),
+  setSelectedReport: (report) => set({ selectedReport: report }),
   setLiveStatus: (liveStatus) => set({ liveStatus }),
   setIsLiveLoading: (flag) => set({ isLiveLoading: flag }),
   setLiveError: (msg) => set({ liveError: msg }),

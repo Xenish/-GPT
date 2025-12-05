@@ -10,7 +10,7 @@ from finantradealgo.core.strategy import BaseStrategy, SignalType, StrategyConte
 
 @dataclass
 class MLStrategyConfig:
-    proba_col: str = "ml_proba_long"
+    proba_col: str = "ml_long_proba"
     entry_threshold: float = 0.55
     exit_threshold: float = 0.50
     warmup_bars: int = 200
@@ -36,6 +36,15 @@ class MLStrategyConfig:
             warmup_bars=int(data.get("warmup_bars", cls.warmup_bars)),
             side=data.get("side", cls.side),
         )
+
+    def to_dict(self) -> dict:
+        return {
+            "proba_col": self.proba_col,
+            "entry_threshold": self.entry_threshold,
+            "exit_threshold": self.exit_threshold,
+            "warmup_bars": self.warmup_bars,
+            "side": self.side,
+        }
 
 
 class MLSignalStrategy(BaseStrategy):

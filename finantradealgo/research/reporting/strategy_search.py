@@ -17,6 +17,7 @@ from finantradealgo.research.visualization.charts import ChartConfig, ChartType,
 from finantradealgo.research.reporting.base import (
     Report,
     ReportGenerator,
+    ReportProfile,
     ReportSection,
 )
 
@@ -31,6 +32,11 @@ class StrategySearchReportGenerator(ReportGenerator):
         self,
         job_dir: Path,
         job_id: Optional[str] = None,
+        run_id: Optional[str] = None,
+        profile: Optional[ReportProfile] = None,
+        strategy_id: Optional[str] = None,
+        symbol: Optional[str] = None,
+        timeframe: Optional[str] = None,
         top_n: int = 10,
     ) -> Report:
         """
@@ -39,6 +45,11 @@ class StrategySearchReportGenerator(ReportGenerator):
         Args:
             job_dir: Directory containing job results
             job_id: Job identifier (optional, inferred from dir if not provided)
+            run_id: Execution identifier (e.g., research run or live session id)
+            profile: Execution profile (research/live)
+            strategy_id: Strategy identifier (rule, ml, trend_continuation, etc.)
+            symbol: Trading symbol
+            timeframe: Bar timeframe
             top_n: Number of top performers to highlight
 
         Returns:
@@ -51,17 +62,59 @@ class StrategySearchReportGenerator(ReportGenerator):
         meta = dict(meta or {})
         meta.setdefault("job_id", job_id)
 
+        profile = profile or meta.get("profile")
+        strategy_id = strategy_id or meta.get("strategy")
+        symbol = symbol or meta.get("symbol")
+        timeframe = timeframe or meta.get("timeframe")
+
+        # Top-level metrics for fast access
+        status_col = "status" if "status" in results_df.columns else None
+        ok_df = results_df[results_df[status_col] != "error"] if status_col else results_df
+        n_total = len(results_df)
+        n_success = len(ok_df)
+        n_errors = n_total - n_success
+
+        best_sharpe = None
+        if "sharpe" in ok_df.columns and not ok_df["sharpe"].isna().all():
+            best_sharpe = float(ok_df["sharpe"].max())
+        best_return = None
+        for return_key in ["cum_return", "return", "total_return"]:
+            if return_key in ok_df.columns and not ok_df[return_key].isna().all():
+                best_return = float(ok_df[return_key].max())
+                break
+
+        report_metrics: Dict[str, Any] = {
+            "best_sharpe": best_sharpe,
+            "best_cum_return": best_return,
+            "samples_total": n_total,
+            "samples_ok": n_success,
+            "samples_failed": n_errors,
+        }
+        report_metrics = {k: v for k, v in report_metrics.items() if v is not None}
+
         report = Report(
             title=f"Strategy Search Report: {job_id}",
-            description=f"Parameter search results for {meta.get('strategy', 'unknown')} strategy on {meta.get('symbol', 'unknown')}/{meta.get('timeframe', 'unknown')}",
+            description=(
+                f"Parameter search results for {strategy_id or 'unknown'} strategy on "
+                f"{symbol or 'unknown'}/{timeframe or 'unknown'}"
+            ),
+            job_id=meta.get("job_id", job_id),
+            run_id=run_id or meta.get("run_id"),
+            profile=profile if isinstance(profile, ReportProfile) else (
+                ReportProfile(profile) if profile in {p.value for p in ReportProfile} else profile
+            ),
+            strategy_id=strategy_id,
+            symbol=symbol,
+            timeframe=timeframe,
+            metrics=report_metrics,
+            artifacts={
+                "results_parquet": str(job_dir / "results.parquet"),
+                "results_csv": str(job_dir / "results.csv"),
+                "meta_json": str(job_dir / "meta.json"),
+            },
             metadata={
-                "job_id": meta.get("job_id", job_id),
-                "strategy": meta.get("strategy"),
-                "symbol": meta.get("symbol"),
-                "timeframe": meta.get("timeframe"),
                 "n_samples": meta.get("n_samples"),
                 "search_type": meta.get("search_type"),
-                "profile": meta.get("profile"),
                 "git_sha": meta.get("git_sha"),
             },
         )
@@ -77,6 +130,7 @@ class StrategySearchReportGenerator(ReportGenerator):
         heatmap_section = self._create_heatmap_section(results_df, job_dir)
         if heatmap_section:
             report.add_section(heatmap_section)
+            report.artifacts["heatmap_html"] = str((job_dir / "param_heatmap.html").as_posix())
 
         return report
 
@@ -154,6 +208,10 @@ This report summarizes the results of a parameter search for the **{meta.get('st
         return ReportSection(
             title="Job Overview",
             content=content.strip(),
+            metrics={
+                "evaluations": n_total,
+                "success_rate": round(success_rate, 2),
+            },
             data={"Performance Summary Statistics": metrics_df} if metrics_df is not None else None,
         )
 
@@ -213,6 +271,7 @@ This report summarizes the results of a parameter search for the **{meta.get('st
         return ReportSection(
             title="Performance Distribution",
             content=content,
+            metrics={"metrics_analyzed": len(metrics)},
             data={"Quartile Analysis": quartiles_df} if quartiles_df is not None else None,
         )
 

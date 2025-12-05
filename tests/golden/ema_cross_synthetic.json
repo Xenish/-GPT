@@ -1,0 +1,17 @@
+{
+  "metrics": {
+    "initial_cash": 10000.0,
+    "final_equity": 10376.982139066582,
+    "cum_return": 0.03769821390665817,
+    "max_drawdown": -1.0004995503048155,
+    "sharpe": 1.1088249319121488,
+    "trade_count": 2
+  },
+  "meta": {
+    "strategy": "ema_cross",
+    "symbol": "SYNTH",
+    "timeframe": "1m",
+    "bars": 200,
+    "generated_by": "scripts/generate_backtest_golden.py"
+  }
+}

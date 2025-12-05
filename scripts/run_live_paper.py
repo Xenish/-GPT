@@ -11,7 +11,7 @@ if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
 from finantradealgo.live_trading.factories import create_live_engine
-from finantradealgo.system.config_loader import LiveConfig, load_config
+from finantradealgo.system.config_loader import LiveConfig, load_config, load_config_from_env
 from finantradealgo.system.logger import init_logger
 
 
@@ -20,23 +20,21 @@ def build_run_id(symbol: str, timeframe: str) -> str:
     return f"{symbol}_{timeframe}_{ts}"
 
 
-def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, config_path: Optional[str] = None, profile: str = "live") -> None:
+def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, profile: Optional[str] = None) -> None:
     # Load config with profile support
-    if config_path:
-        raise RuntimeError(
-            "Explicit config path is no longer supported. Use load_config(profile=...) with system.live.yml."
-        )
-    cfg = load_config(profile)
+    cfg = load_config(profile) if profile else load_config_from_env()
 
     # SAFETY: Assert live/paper mode for live trading
     cfg_mode = cfg.get("mode", "unknown")
     if cfg_mode not in ("live", "paper"):
         raise RuntimeError(
-            f"Live trading must run with mode='live' or mode='paper' config. Got mode='{cfg_mode}'. "
-            f"Use --config config/system.live.yml or set FT_CONFIG_PATH=config/system.live.yml"
+            f"Live trading must run with mode='live' or mode='paper'. Got mode='{cfg_mode}'. "
+            f"Set FINANTRADE_PROFILE=live or pass --profile live."
         )
     cfg_local = dict(cfg)
     live_section = dict(cfg_local.get("live", {}) or {})
+    # Force paper mode unless explicitly set
+    live_section["mode"] = "paper"
     if symbol:
         cfg_local["symbol"] = symbol
         live_section["symbol"] = symbol
@@ -50,6 +48,8 @@ def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, config_p
         default_symbol=cfg_local.get("symbol"),
         default_timeframe=cfg_local.get("timeframe"),
     )
+    if live_cfg.mode != "paper":
+        raise RuntimeError("run_live_paper enforces live.mode='paper'. Update config or use run_live_exchange.")
     cfg_local["live_cfg"] = live_cfg
 
     run_id = build_run_id(live_cfg.symbol, live_cfg.timeframe)
@@ -87,20 +87,14 @@ def main(symbol: Optional[str] = None, timeframe: Optional[str] = None, config_p
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Run live paper trading")
     parser.add_argument(
-        "--config",
-        type=str,
-        default=None,
-        help="Explicit config path (overrides profile selection)",
-    )
-    parser.add_argument(
         "--profile",
         choices=["live", "research"],
-        default="live",
-        help="Config profile to load when --config is not provided",
+        default=None,
+        help="Config profile to load; if omitted uses FINANTRADE_PROFILE or 'research'",
     )
     parser.add_argument("--symbol", type=str, default=None, help="Override symbol")
     parser.add_argument("--timeframe", type=str, default=None, help="Override timeframe")
     args = parser.parse_args()
 
     config_path = args.config or None
-    main(symbol=args.symbol, timeframe=args.timeframe, config_path=args.config, profile=args.profile)
+    main(symbol=args.symbol, timeframe=args.timeframe, profile=args.profile)

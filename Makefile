@@ -38,10 +38,16 @@ test-backend:
 	pytest -v
 
 test-backend-ci:
-	pytest -q -m "not slow"
+	pytest -q -m "not slow and not db"
 
 test-backend-slow:
 	pytest -v -m slow
+
+db-tests:
+	pytest -v -m "db"
+
+db-migrate:
+	alembic upgrade head
 
 lint-backend:
 	@echo "Python linting not configured yet"

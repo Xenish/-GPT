@@ -50,3 +50,31 @@ class MLSignalStrategy(BaseStrategy):
                 return "CLOSE"
 
         return None
+
+    def generate_signals(self, df: pd.DataFrame) -> pd.DataFrame:
+        """
+        Convenience helper to score a full DataFrame and emit proba/signal columns.
+
+        Returns a copy with:
+          - ml_long_proba: model probabilities
+          - ml_long_signal: 1.0 when proba >= entry_threshold (post-warmup), 0.0 when proba <= exit_threshold, NaN otherwise
+        """
+        missing = [col for col in self.feature_cols if col not in df.columns]
+        if missing:
+            raise ValueError(f"Missing feature columns in df: {missing}")
+
+        out = df.copy()
+        proba = self.model.predict_proba(out[self.feature_cols])[:, 1].astype(float)
+        out["ml_long_proba"] = proba
+
+        signals = pd.Series(float("nan"), index=out.index, dtype=float)
+        for idx, p in enumerate(proba):
+            if idx < self.warmup_bars:
+                continue
+            if p >= self.proba_entry:
+                signals.iloc[idx] = 1.0
+            elif p <= self.proba_exit:
+                signals.iloc[idx] = 0.0
+
+        out["ml_long_signal"] = signals
+        return out

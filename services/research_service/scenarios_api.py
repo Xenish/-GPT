@@ -39,15 +39,8 @@ class RunScenariosRequest(BaseModel):
 class ScenarioResult(BaseModel):
     """Result of a single scenario."""
     scenario_id: str
-    label: str
-    symbol: str
-    timeframe: str
-    strategy: str
-    params: Dict[str, Any]
-    cum_return: float
-    sharpe: float
-    max_drawdown: float
-    trade_count: int
+    description: str
+    metrics: Dict[str, Any]
 
 
 class RunScenariosResponse(BaseModel):
@@ -110,15 +103,17 @@ async def run_scenarios_endpoint(request: RunScenariosRequest):
     for _, row in results_df.iterrows():
         results.append(ScenarioResult(
             scenario_id=row["scenario_id"],
-            label=row["label"],
-            symbol=row["symbol"],
-            timeframe=row["timeframe"],
-            strategy=row["strategy"],
-            params=row["params"],
-            cum_return=float(row["cum_return"]),
-            sharpe=float(row["sharpe"]),
-            max_drawdown=float(row["max_drawdown"]),
-            trade_count=int(row["trade_count"]),
+            description=str(row.get("label", row.get("scenario_name", row["scenario_id"]))),
+            metrics={
+                "strategy": row.get("strategy"),
+                "symbol": row.get("symbol"),
+                "timeframe": row.get("timeframe"),
+                "params": row.get("params"),
+                "cum_return": float(row.get("cum_return")),
+                "sharpe": float(row.get("sharpe")),
+                "max_drawdown": float(row.get("max_drawdown")),
+                "trade_count": int(row.get("trade_count")),
+            },
         ))
 
     return RunScenariosResponse(

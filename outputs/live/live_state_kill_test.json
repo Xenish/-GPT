@@ -1,17 +1,17 @@
 {
   "run_id": "kill_test",
-  "symbol": "TEST",
-  "timeframe": "1m",
+  "symbol": "BTCUSDT",
+  "timeframe": "15m",
   "strategy": "unknown",
   "mode": "replay",
   "status": "STOPPED_BY_KILL_SWITCH",
-  "start_time": "2025-11-27T16:50:37.451419+00:00",
+  "start_time": null,
   "last_bar_time": "2025-01-01T00:00:00+00:00",
   "last_bar_time_ts": 1735689600.0,
-  "equity": 1000.0,
+  "equity": 100.0,
   "realized_pnl": null,
   "unrealized_pnl": null,
-  "daily_realized_pnl": 0.0,
+  "daily_realized_pnl": -1.0,
   "daily_unrealized_pnl": null,
   "open_positions": [],
   "risk_stats": {
@@ -20,14 +20,18 @@
   },
   "requested_action": null,
   "data_source": "replay",
-  "stale_data_seconds": 28572637.45265174,
+  "stale_data_seconds": 29203416.94857526,
   "ws_reconnect_count": 0,
   "last_orders": [],
-  "timestamp": 1764262237.4617536,
+  "timestamp": 1764893016.9546902,
+  "kill_switch_triggered": true,
+  "kill_switch_reason": "daily_pnl",
+  "kill_switch_ts": "2025-01-01T00:00:00+00:00",
   "kill_switch": {
     "is_triggered": true,
-    "reason": "min_equity",
-    "trigger_time": "2025-11-27T16:50:37.460699",
-    "peak_equity": 1000.0
-  }
+    "reason": "daily_pnl",
+    "trigger_time": "2025-12-05T00:03:36.954564+00:00",
+    "peak_equity": 100.0
+  },
+  "validation_issues": 0
 }

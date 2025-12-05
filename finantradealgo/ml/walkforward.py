@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
@@ -26,12 +26,16 @@ def add_walkforward_ml_signals(
     label_col: str,
     config: WalkForwardConfig,
     log_metrics: bool = True,
-) -> tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+) -> Tuple[pd.DataFrame, Optional[pd.DataFrame]]:
+    """
+    Apply walk-forward training/evaluation. Fits on rolling windows and writes ml_long_proba/signal.
+    """
     df = df.copy()
+    df = df.sort_values("timestamp").reset_index(drop=True)
     n = len(df)
     if n <= config.initial_train_size:
         raise ValueError(
-            f"Veri çok kısa: len={n}, initial_train_size={config.initial_train_size}"
+            f"Dataset too short: len={n}, initial_train_size={config.initial_train_size}"
         )
 
     model = SklearnLongModel(config.model_config)
@@ -50,9 +54,8 @@ def add_walkforward_ml_signals(
         train_end = i
 
         train_slice = df.iloc[train_start:train_end]
-
-        X_train = train_slice[feature_cols]
-        y_train = train_slice[label_col].astype(int)
+        y_train = train_slice[label_col].dropna().astype(int)
+        X_train = train_slice.loc[y_train.index, feature_cols]
 
         if y_train.nunique() < 2 or len(y_train) < config.min_class_samples:
             i += config.retrain_every
@@ -63,42 +66,66 @@ def add_walkforward_ml_signals(
         j_end = min(i + config.retrain_every, n)
         pred_slice = df.iloc[i:j_end]
         X_pred = pred_slice[feature_cols]
-
-        proba_chunk = model.predict_proba(X_pred)[:, 1]
-        proba_arr[i:j_end] = proba_chunk
-
-        y_pred_chunk = (proba_chunk >= config.proba_entry).astype(int)
-        signal_arr[i:j_end] = y_pred_chunk
+        if len(X_pred) > 0:
+            proba_chunk = model.predict_proba(X_pred)[:, 1]
+            proba_arr[i:j_end] = proba_chunk
+            y_pred_chunk = (proba_chunk >= config.proba_entry).astype(int)
+            signal_arr[i:j_end] = y_pred_chunk
+        else:
+            y_pred_chunk = np.array([], dtype=int)
 
         if log_metrics:
-            y_true_chunk = pred_slice[label_col].astype(int).values
-            metrics_blocks.append(
-                {
-                    "block_id": block_id,
-                    "train_start_idx": train_start,
-                    "train_end_idx": train_end,
-                    "pred_start_idx": i,
-                    "pred_end_idx": j_end,
-                    "train_size": int(len(y_train)),
-                    "pred_size": int(len(y_true_chunk)),
-                    "train_pos_rate": float(y_train.mean()),
-                    "pred_pos_rate": float(y_true_chunk.mean()),
-                    "precision": float(
-                        precision_score(y_true_chunk, y_pred_chunk, zero_division=0)
-                    ),
-                    "recall": float(
-                        recall_score(y_true_chunk, y_pred_chunk, zero_division=0)
-                    ),
-                    "accuracy": float(accuracy_score(y_true_chunk, y_pred_chunk)),
-                    "f1": float(f1_score(y_true_chunk, y_pred_chunk, zero_division=0)),
-                }
-            )
+            mask = pred_slice[label_col].notna().to_numpy()
+            y_true_chunk = pred_slice.loc[pred_slice[label_col].notna(), label_col].astype(int).values
+            if y_true_chunk.size == 0:
+                metrics_blocks.append(
+                    {
+                        "block_id": block_id,
+                        "train_start_idx": train_start,
+                        "train_end_idx": train_end,
+                        "pred_start_idx": i,
+                        "pred_end_idx": j_end,
+                        "train_size": int(len(y_train)),
+                        "pred_size": 0,
+                        "train_pos_rate": float(y_train.mean()) if len(y_train) else 0.0,
+                        "pred_pos_rate": float("nan"),
+                        "precision": float("nan"),
+                        "recall": float("nan"),
+                        "accuracy": float("nan"),
+                        "f1": float("nan"),
+                    }
+                )
+            else:
+                y_pred_eval = y_pred_chunk[mask] if len(y_pred_chunk) == len(mask) else np.array([])
+                if y_pred_eval.size == 0:
+                    y_pred_eval = np.zeros_like(y_true_chunk)
+                metrics_blocks.append(
+                    {
+                        "block_id": block_id,
+                        "train_start_idx": train_start,
+                        "train_end_idx": train_end,
+                        "pred_start_idx": i,
+                        "pred_end_idx": j_end,
+                        "train_size": int(len(y_train)),
+                        "pred_size": int(len(y_true_chunk)),
+                        "train_pos_rate": float(y_train.mean()) if len(y_train) else 0.0,
+                        "pred_pos_rate": float(y_true_chunk.mean()),
+                        "precision": float(
+                            precision_score(y_true_chunk, y_pred_eval, zero_division=0)
+                        ),
+                        "recall": float(
+                            recall_score(y_true_chunk, y_pred_eval, zero_division=0)
+                        ),
+                        "accuracy": float(accuracy_score(y_true_chunk, y_pred_eval)),
+                        "f1": float(f1_score(y_true_chunk, y_pred_eval, zero_division=0)),
+                    }
+                )
 
         block_id += 1
         i = j_end
 
-    df["ml_proba_long"] = proba_arr
-    df["ml_signal_long"] = signal_arr
+    df["ml_long_proba"] = proba_arr
+    df["ml_long_signal"] = signal_arr
 
     wf_metrics_df: Optional[pd.DataFrame]
     if log_metrics and metrics_blocks:

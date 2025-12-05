@@ -4,6 +4,7 @@ from logging.config import fileConfig
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
+import os
 
 # this is the Alembic Config object, which provides access to the values
 # within the .ini file in use.
@@ -17,7 +18,9 @@ target_metadata = None  # we use imperative migrations with raw SQL
 
 
 def run_migrations_offline() -> None:
-    url = config.get_main_option("sqlalchemy.url")
+    url = config.get_main_option("sqlalchemy.url") or os.getenv("FT_TIMESCALE_DSN")
+    if not url:
+        raise RuntimeError("Set sqlalchemy.url in alembic.ini or provide FT_TIMESCALE_DSN env.")
     context.configure(
         url=url,
         target_metadata=target_metadata,
@@ -30,8 +33,15 @@ def run_migrations_offline() -> None:
 
 
 def run_migrations_online() -> None:
+    dsn = config.get_main_option("sqlalchemy.url") or os.getenv("FT_TIMESCALE_DSN")
+    if not dsn:
+        raise RuntimeError("Set sqlalchemy.url in alembic.ini or provide FT_TIMESCALE_DSN env.")
+
+    section = config.get_section(config.config_ini_section)
+    section["sqlalchemy.url"] = dsn
+
     connectable = engine_from_config(
-        config.get_section(config.config_ini_section),
+        section,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
     )

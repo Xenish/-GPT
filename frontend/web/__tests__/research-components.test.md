@@ -76,29 +76,35 @@ This is a simplified test checklist for the Research UI components. For full tes
 
 ---
 
-## API Client: researchApi
+## API Client: `lib/api`
 
-### Endpoint Tests
-- [ ] `pingResearchService()` calls /api/research/ping
-- [ ] `fetchResearchHealth()` calls /api/research/status
-- [ ] `createStrategySearchJob()` posts to /api/research/strategy-search/jobs/
-- [ ] `fetchJobStatus()` gets /api/research/strategy-search/jobs/{id}
-- [ ] `fetchStrategySearchJobs()` lists jobs
-- [ ] `runScenarios()` posts to /api/research/scenarios/run
+### Report Fetchers
+- [ ] `fetchBacktestReport(jobId, format)` calls `/api/research/reports/backtests/{jobId}/report`
+- [ ] `fetchStrategySearchReport(jobId, format)` posts to `/api/research/reports/strategy-search`
+- [ ] `fetchLiveReport(format, runId?)` calls `/api/research/performance/live/report`
+- [ ] Report types match contract (`Report`, `ReportSection`, `metrics`, `artifacts`)
 
-### Configuration Tests
-- [ ] Uses correct base URL (localhost:8001)
-- [ ] Respects NEXT_PUBLIC_RESEARCH_API_BASE_URL env var
+### Core Data
+- [ ] `fetchMeta()` returns symbols/timeframes/strategies/targets
+- [ ] `fetchBacktests()` lists runs for symbol/timeframe/strategy
+- [ ] `fetchChart()` returns bars + meta
+- [ ] `fetchTrades(runId)` returns trades
+- [ ] `fetchLiveStatus(runId?)` returns live status (404 handled as null)
+
+### Extended (optional)
+- [ ] `fetchPortfolioMetrics()` returns portfolio runs/metrics
+- [ ] `fetchMonteCarlo()` posts to `/api/montecarlo/run`
 
 ---
 
 ## Integration: page.tsx
 
 ### Tab Navigation Tests
-- [ ] "Research" tab button displays
-- [ ] Clicking "Research" shows research section
-- [ ] Sub-tabs (Scenarios/Strategy Search) work
-- [ ] Switching tabs preserves component state
+- [ ] "Research / Backtests" tab displays default view
+- [ ] "Strategy Search" tab shows job/scenario panels
+- [ ] "Live" tab shows live controls/status
+- [ ] "Portfolio / Monte Carlo" tab shows portfolio metrics section
+- [ ] Switching tabs preserves state where applicable (selectedScenarioId, selectedJobId/report)
 
 ### Component Integration Tests
 - [ ] ResearchScenariosPanel renders in Scenarios sub-tab

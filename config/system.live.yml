@@ -120,6 +120,17 @@ kill_switch:
   evaluation_interval_bars: 1
 
 # ============================================================================
+# RISK - Live risk limit overrides (stricter)
+# ============================================================================
+risk:
+  risk_per_trade_pct: 0.005
+  max_position_notional: 200.0
+  max_position_contracts: 0.05
+  max_open_trades: 1
+  leverage_ceiling: 3.0
+  pyramiding_limit: 1
+
+# ============================================================================
 # NOTIFICATIONS - Bildirimler
 # ============================================================================
 notifications:

@@ -23,6 +23,8 @@ from finantradealgo.ml.model import (
     SklearnLongModel,
     SklearnModelConfig,
     save_sklearn_model,
+    set_global_seed,
+    compute_feature_schema_hash,
 )
 from finantradealgo.ml.model_registry import (
     get_latest_model,
@@ -61,7 +63,8 @@ def run_ml_backtest(
     timeframe = pipeline_meta.get("timeframe", sys_cfg.get("timeframe", "15m"))
     pipeline_version = pipeline_meta.get("pipeline_version", PIPELINE_VERSION)
 
-    ml_cfg = sys_cfg.get("ml", {})
+    ml_cfg_obj = sys_cfg.get("ml_cfg") or {}
+    ml_cfg = sys_cfg.get("ml", {}) or {}
     backtest_cfg = ml_cfg.get("backtest", {}) or {}
     persistence_cfg = ml_cfg.get("persistence", {}) or {}
     registry_cfg = ml_cfg.get("registry", {}) or {}
@@ -105,7 +108,7 @@ def run_ml_backtest(
     model_cfg = None
 
     if use_saved_model:
-        model_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
+        model_dir = getattr(ml_cfg_obj, "model_dir", None) or persistence_cfg.get("model_dir", "outputs/ml_models")
         model_id = backtest_cfg.get("model_id") or registry_cfg.get("selected_id")
         if not model_id:
             latest = get_latest_model(
@@ -123,6 +126,13 @@ def run_ml_backtest(
         if missing_cols:
             raise ValueError(f"Current pipeline missing columns from model: {missing_cols}")
         X_eval = df_eval[feature_cols].to_numpy()
+        if getattr(loaded_meta, "feature_schema_hash", None):
+            current_hash = compute_feature_schema_hash(list(df_eval[feature_cols].columns))
+            if current_hash != loaded_meta.feature_schema_hash:
+                raise ValueError(
+                    "Feature schema hash mismatch between model metadata and evaluation DataFrame. "
+                    "Regenerate features or retrain the model."
+                )
         saved_version = getattr(loaded_meta, "pipeline_version", None)
         if saved_version and saved_version != pipeline_version:
             if not backtest_cfg.get("allow_pipeline_mismatch", False):
@@ -139,6 +149,8 @@ def run_ml_backtest(
                 )
     else:
         model_cfg = SklearnModelConfig.from_dict(ml_cfg.get("model"))
+        if model_cfg.random_state is not None:
+            set_global_seed(model_cfg.random_state)
         model_obj = SklearnLongModel(model_cfg)
         X_train = df_train[feature_cols].to_numpy()
         y_train = df_train[target_col].to_numpy(dtype=int)
@@ -147,7 +159,10 @@ def run_ml_backtest(
     proba = model_obj.predict_proba(X_eval)[:, 1]
 
     ml_bt_cfg = MLStrategyConfig.from_dict(backtest_cfg)
-    df_eval[ml_bt_cfg.proba_col] = proba
+    # Prefer standard proba column naming from MLConfig
+    proba_col = getattr(ml_cfg_obj, "proba_column", None) or ml_bt_cfg.proba_col
+    df_eval[proba_col] = proba
+    ml_bt_cfg.proba_col = proba_col
 
     y_pred = (proba >= 0.5).astype(int)
     cls_metrics = {
@@ -201,7 +216,17 @@ def run_ml_backtest(
             raise ValueError("timestamp column missing for model metadata.")
         train_start = pd.to_datetime(df_train["timestamp"].iloc[0])
         train_end = pd.to_datetime(df_train["timestamp"].iloc[-1])
-        model_dir = persistence_cfg.get("model_dir", "outputs/ml_models")
+        model_dir = getattr(ml_cfg_obj, "model_dir", None) or persistence_cfg.get("model_dir", "outputs/ml_models")
+        config_snapshot = {
+            "profile": sys_cfg.get("profile"),
+            "symbol": symbol,
+            "timeframe": timeframe,
+            "label": label_cfg.__dict__,
+            "model": model_cfg.__dict__,
+            "feature_preset": feature_preset,
+            "feature_cols": feature_cols,
+        }
+
         meta = save_sklearn_model(
             model=model_obj.clf,
             symbol=symbol,
@@ -215,6 +240,8 @@ def run_ml_backtest(
             metrics=metrics,
             base_dir=model_dir,
             pipeline_version=pipeline_version,
+            seed=model_cfg.random_state,
+            config_snapshot=config_snapshot,
         )
         aux["model_meta"] = meta
         if persistence_cfg.get("use_registry", True):
@@ -237,8 +264,30 @@ def _ensure_output_dirs() -> tuple[Path, Path]:
 
 
 def main() -> None:
+    import argparse
+
+    parser = argparse.ArgumentParser(description="Run ML backtest using research profile.")
+    parser.add_argument("--symbol", type=str, help="Override symbol for backtest.")
+    parser.add_argument("--timeframe", type=str, help="Override timeframe for backtest.")
+    parser.add_argument("--use-saved-model", action="store_true", help="Use latest/specified saved model instead of training.")
+    parser.add_argument("--model-id", type=str, help="Specific model id to load (requires --use-saved-model).")
+    args = parser.parse_args()
+
     sys_cfg = load_config("research")
-    df, pipeline_meta = build_feature_pipeline_from_system_config(sys_cfg)
+    if args.symbol:
+        sys_cfg["symbol"] = args.symbol
+    if args.timeframe:
+        sys_cfg["timeframe"] = args.timeframe
+    if args.use_saved_model:
+        sys_cfg.setdefault("ml", {}).setdefault("backtest", {})["use_saved_model"] = True
+        if args.model_id:
+            sys_cfg["ml"]["backtest"]["model_id"] = args.model_id
+
+    df, pipeline_meta = build_feature_pipeline_from_system_config(
+        sys_cfg,
+        symbol=sys_cfg.get("symbol"),
+        timeframe=sys_cfg.get("timeframe"),
+    )
     report, df_eval, aux = run_ml_backtest(
         sys_cfg=sys_cfg,
         df=df,

@@ -1,39 +1,34 @@
+"""
+Run a simple RF backtest across multiple entry thresholds using the standard
+ML proba/signal column names (`ml_long_proba`).
+"""
 from __future__ import annotations
+
 import sys
 from pathlib import Path
+from typing import Sequence
+
+import pandas as pd
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
     sys.path.append(str(ROOT))
 
-
-from typing import Sequence
-
-import pandas as pd
-
 from finantradealgo.backtester.backtest_engine import BacktestConfig, Backtester
+from finantradealgo.core.report import ReportConfig, generate_report
 from finantradealgo.data_engine.loader import load_ohlcv_csv
 from finantradealgo.features.base_features import FeatureConfig, add_basic_features
-from finantradealgo.core.report import ReportConfig, generate_report
-from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.ml.labels import LabelConfig, add_long_only_labels
 from finantradealgo.ml.model import SklearnLongModel, SklearnModelConfig
-from finantradealgo.strategies.ml_signal import MLSignalStrategy
+from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
+from finantradealgo.strategies.ml_strategy import MLSignalStrategy, MLStrategyConfig
 
 
 def train_rf_model_15m(csv_path: str = "data/ohlcv/BTCUSDT_15m.csv"):
     """
-    15 dakikalık veriden:
-      - feature'ları ve label'ları üretir
-      - %70 train, %30 backtest split yapar
-      - RandomForest modeli train eder
-    Geriye:
-      - eğitilmiş model
-      - sadece backtest kısmına ait df (label + feature'lı)
-      - feature kolon isimleri
-    döner.
+    Prepare features/labels from a 15m CSV and train a RandomForest.
+    Returns the trained model, the out-of-sample DataFrame, and feature columns.
     """
-    # 1) Data + feature + label
     df = load_ohlcv_csv(csv_path)
 
     feat_config = FeatureConfig()
@@ -56,26 +51,21 @@ def train_rf_model_15m(csv_path: str = "data/ohlcv/BTCUSDT_15m.csv"):
         "trend_score",
     ]
 
-    # Label + feature için NaN satırları at
     df_ml = df_lab.dropna(subset=["label_long"] + feature_cols).copy()
 
     X = df_ml[feature_cols]
     y = df_ml["label_long"].astype(int)
 
-    # 70/30 split
     split_idx = int(len(df_ml) * 0.7)
-    X_train, X_bt = X.iloc[:split_idx], X.iloc[split_idx:]
+    X_train, _ = X.iloc[:split_idx], X.iloc[split_idx:]
     y_train = y.iloc[:split_idx]
 
-    print(f"[INFO] Train size: {len(X_train)}, Backtest size: {len(X_bt)}")
+    print(f"[INFO] Train size: {len(X_train)}, Backtest size: {len(df_ml) - len(X_train)}")
 
-    # 2) Kendi wrapper üzerinden RandomForest seç
-    #    (run_ml_model_comparison_15m.py ile aynı mantık)
-    model_config = SklearnModelConfig(model_type="rf")
+    model_config = SklearnModelConfig(model_type="random_forest")
     model = SklearnLongModel(model_config)
     model.fit(X_train, y_train)
 
-    # Backtest'te kullanılacak df: out-of-sample kısmı
     df_bt = df_ml.iloc[split_idx:].copy()
 
     return model, df_bt, feature_cols
@@ -88,10 +78,11 @@ def run_backtest_for_thresholds(
     out_csv: str = "ml_rf_backtest_thresholds_15m.csv",
 ) -> None:
     """
-    Aynı RF modelini kullanarak farklı proba_entry threshold değerleri için
-    backtest çalıştırır, özet metrikleri CSV'ye yazar.
+    Run backtests for a list of probability entry thresholds and export summary.
     """
     model, df_bt, feature_cols = train_rf_model_15m(csv_path=csv_path)
+    df_bt = df_bt.copy()
+    df_bt["ml_long_proba"] = model.predict_proba(df_bt[feature_cols])[:, 1].astype(float)
 
     results = []
 
@@ -112,13 +103,14 @@ def run_backtest_for_thresholds(
             slippage_pct=0.0005,
         )
 
-        strategy = MLSignalStrategy(
-            model=model,
-            feature_cols=feature_cols,
-            proba_entry=th,
-            proba_exit=0.50,  # sabit exit threshold (istersek sonra oynarız)
-            warmup_bars=100,
+        strategy_cfg = MLStrategyConfig(
+            proba_col="ml_long_proba",
+            entry_threshold=th,
+            exit_threshold=0.50,
+            warmup_bars=0,
+            side="long_only",
         )
+        strategy = MLSignalStrategy(strategy_cfg)
 
         backtester = Backtester(
             strategy=strategy,

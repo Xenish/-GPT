@@ -14,7 +14,7 @@ from finantradealgo.features.base_features import FeatureConfig, add_basic_featu
 from finantradealgo.core.report import ReportConfig, generate_report
 from finantradealgo.risk.risk_engine import RiskConfig, RiskEngine
 from finantradealgo.strategies.ema_cross import EMACrossStrategy
-from finantradealgo.system.config_loader import load_config
+from finantradealgo.system.config_loader import load_config, load_config_from_env
 
 
 
@@ -23,13 +23,13 @@ def main() -> None:
     parser.add_argument(
         "--profile",
         choices=["research", "live"],
-        default="research",
-        help="Config profile to load (default: research)",
+        default=None,
+        help="Config profile to load; if omitted uses FINANTRADE_PROFILE or research",
     )
     args = parser.parse_args()
 
     # Load config with profile support
-    sys_cfg = load_config(args.profile)
+    sys_cfg = load_config(args.profile) if args.profile else load_config_from_env()
 
     # SAFETY: Assert research profile for backtest
     cfg_profile = sys_cfg.get("profile", sys_cfg.get("mode", "unknown"))

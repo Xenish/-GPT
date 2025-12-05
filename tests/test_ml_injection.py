@@ -81,7 +81,7 @@ def _base_cfg(model_dir: Path) -> dict:
     return {
         "ml": {
             "model": {"type": "RandomForest"},
-            "backtest": {"proba_column": "ml_proba_long"},
+            "backtest": {"proba_column": "ml_long_proba"},
             "persistence": {"model_dir": str(model_dir)},
         }
     }
@@ -104,8 +104,8 @@ def test_inject_ml_proba_happy_path(tmp_path):
         timeframe="15m",
     )
 
-    assert "ml_proba_long" in out.columns
-    assert not out["ml_proba_long"].isna().all()
+    assert "ml_long_proba" in out.columns
+    assert not out["ml_long_proba"].isna().all()
 
 
 def test_inject_ml_proba_missing_feature_raises(tmp_path):

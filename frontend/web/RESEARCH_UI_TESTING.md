@@ -21,21 +21,21 @@ This document provides manual testing procedures for the Research Service UI com
    NEXT_PUBLIC_RESEARCH_API_BASE_URL=http://localhost:8001
    ```
 
-## Test Suite 1: Research Tab Navigation
+## Test Suite 1: Core Tabs
 
-### Test 1.1: Tab Switching
+### Test 1.1: Tab Switching (Research / Strategy Search / Live / Portfolio)
 - [ ] Navigate to homepage
-- [ ] Click "Research" tab in main navigation
-- [ ] Verify tab becomes active (bold with blue underline)
-- [ ] Verify "Scenarios" sub-tab is active by default
-- [ ] Click "Strategy Search" sub-tab
-- [ ] Verify sub-tab switches successfully
+- [ ] Click "Research / Backtests" tab (default)
+- [ ] Switch to "Strategy Search" tab
+- [ ] Switch to "Live" tab
+- [ ] Switch to "Portfolio / Monte Carlo" tab
+- [ ] Return to "Research / Backtests"
 
-**Expected**: Smooth tab switching with no errors in console.
+**Expected**: Each tab highlights active state (blue underline, bold) and no console errors; state not lost when toggling.
 
 ---
 
-## Test Suite 2: Scenario Analysis
+## Test Suite 2: Scenario Analysis (Research)
 
 ### Test 2.1: Basic Scenario Configuration
 - [ ] Navigate to Research > Scenarios
@@ -93,7 +93,7 @@ This document provides manual testing procedures for the Research Service UI com
 
 ---
 
-## Test Suite 3: Strategy Search Jobs
+## Test Suite 3: Strategy Search Tab
 
 ### Test 3.1: Job List Display
 - [ ] Navigate to Research > Strategy Search

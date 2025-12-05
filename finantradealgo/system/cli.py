@@ -5,7 +5,7 @@ from typing import Optional
 import click
 
 from finantradealgo.backtester.runners import run_backtest_once
-from finantradealgo.system.config_loader import load_config
+from finantradealgo.system.config_loader import load_config, load_config_from_env
 from scripts.run_build_features import main as build_features_main
 from scripts.run_live_paper import main as live_paper_main
 from scripts.run_ml_train import main as ml_train_main
@@ -43,7 +43,11 @@ def build_features(symbol: Optional[str], timeframe: Optional[str]) -> None:
 @click.option("--tf", "timeframe", default=None, help="Override timeframe")
 def backtest(strategy: str, symbol: Optional[str], timeframe: Optional[str]) -> None:
     """Run a single backtest using the configured pipelines."""
-    cfg = load_config("research")
+    cfg = load_config_from_env()
+    if cfg.get("profile") != "research":
+        raise RuntimeError(
+            f"Backtest CLI requires the 'research' profile. Set FINANTRADE_PROFILE=research (current: {cfg.get('profile')!r})."
+        )
     cfg_local = _override_symbol_tf(cfg, symbol=symbol, timeframe=timeframe)
     resolved_symbol = cfg_local.get("symbol", cfg.get("symbol", "BTCUSDT"))
     resolved_timeframe = cfg_local.get("timeframe", cfg.get("timeframe", "15m"))

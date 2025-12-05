@@ -5,6 +5,7 @@ from typing import Dict, Optional, List
 
 import pandas as pd
 
+from finantradealgo.risk import RiskMetricConfig
 from finantradealgo.risk.daily_loss_limit import (
     DailyLossLimitConfig,
     is_daily_loss_limit_hit,
@@ -17,6 +18,8 @@ from finantradealgo.risk.position_sizing import (
     PositionSizingInput,
     calc_size_atr_stop,
 )
+from finantradealgo.risk.tail_risk import compute_tail_risk_metrics
+from finantradealgo.risk.var_calculator import VaRCalculator
 
 
 @dataclass
@@ -128,6 +131,8 @@ class RiskEngine:
         *,
         open_positions: Optional[List[Dict[str, Any]]] = None,
         max_open_trades: Optional[int] = None,
+        tail_guard_returns: Optional[pd.Series] = None,
+        tail_guard_config: Optional[RiskMetricConfig] = None,
     ) -> bool:
         if equity_start_of_day <= 0:
             return False
@@ -155,5 +160,24 @@ class RiskEngine:
                 self._tail_risk_active = True
                 if self.config.tail_risk_max_leverage_in_crash <= 0:
                     return False
+
+        # Optional VaR/tail guard using provided returns
+        if tail_guard_returns is not None and tail_guard_config is not None:
+            try:
+                metrics = compute_tail_risk_metrics(
+                    tail_guard_returns,
+                    tail_guard_config,
+                    use_parametric=False,
+                )
+                var_calc = VaRCalculator(tail_guard_config)
+                var_res = var_calc.historical_var(tail_guard_returns)
+                var_loss = float(var_res.var_value)
+                if var_loss > equity_start_of_day * max(self.config.capital_risk_pct_per_trade, 0.0):
+                    return False
+                if metrics.expected_max_drawdown and metrics.expected_max_drawdown > self.config.max_daily_loss_pct:
+                    return False
+            except Exception:
+                # Tail guard failures should not silently permit risk; block conservatively
+                return False
 
         return True

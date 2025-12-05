@@ -1,0 +1,11 @@
+export const fetchChart = jest.fn();
+export const fetchSummary = jest.fn();
+export const fetchBacktests = jest.fn();
+export const fetchTrades = jest.fn();
+export const fetchBacktestReport = jest.fn();
+export const fetchStrategySearchJobs = jest.fn();
+export const fetchStrategySearchJob = jest.fn();
+export const fetchLiveState = jest.fn();
+export const fetchPortfolioMetrics = jest.fn();
+export const fetchMonteCarlo = jest.fn();
+export const fetchScenarioResults = jest.fn();

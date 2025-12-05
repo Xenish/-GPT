@@ -1,2 +1,2 @@
 params,cum_return,sharpe,max_drawdown,win_rate,trade_count,status,error_message,start_date,end_date,runtime_sec
-"{'rsi_trend_min': 41.758705331087654, 'rsi_trend_max': 65.62330008326151, 'min_trend_score': 0.04541298312365294, 'use_ms_trend_filter': True, 'ms_trend_min': -0.2724830391481587, 'ms_trend_max': 1.083352640659355}",-0.030076891754505786,0.22440156857330404,-0.23382361448198466,,84,ok,,,,
+"{'rsi_trend_min': 54.464784803261374, 'rsi_trend_max': 78.07510144051113, 'min_trend_score': 0.20754058554698035, 'use_ms_trend_filter': False, 'ms_trend_min': -0.3646305592031609, 'ms_trend_max': 0.8372552939536071}",-0.004252080774486022,0.05313994295552929,-0.1779482032432966,,7,ok,,,,

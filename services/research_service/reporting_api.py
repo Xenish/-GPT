@@ -6,12 +6,15 @@ Endpoints for generating research reports from backtest results.
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Optional, List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from fastapi.responses import FileResponse, HTMLResponse
+
+from finantradealgo.research.reporting import BacktestReportGenerator, ReportFormat
 
 router = APIRouter()
 
@@ -65,7 +68,7 @@ class ListReportsResponse(BaseModel):
 # Endpoints
 # ============================================================================
 
-@router.post("/strategy-search", response_model=GenerateReportResponse)
+@router.post("/strategy-search")
 async def generate_strategy_search_report(request: GenerateStrategySearchReportRequest):
     """
     Generate report for strategy parameter search job.
@@ -109,7 +112,6 @@ async def generate_strategy_search_report(request: GenerateStrategySearchReportR
 
         report_format = format_map.get(request.format.lower(), ReportFormat.HTML)
 
-        # Generate report
         generator = StrategySearchReportGenerator()
         report = generator.generate(
             job_dir=job_dir,
@@ -117,22 +119,22 @@ async def generate_strategy_search_report(request: GenerateStrategySearchReportR
             top_n=request.top_n,
         )
 
-        # Save report
+        fmt = request.format.lower()
         report_dir = Path("reports") / "strategy_search"
         report_dir.mkdir(parents=True, exist_ok=True)
+        report_path = report_dir / f"{request.job_id}.{fmt if fmt != 'markdown' else 'md'}"
 
-        report_filename = f"{request.job_id}_{request.format.lower()}"
-        report_path = report_dir / report_filename
+        if fmt == "markdown":
+            content = report.to_markdown()
+            report.save(report_path, ReportFormat.MARKDOWN)
+            return {"job_id": request.job_id, "format": "markdown", "content": content}
+        if fmt == "json":
+            report.save(report_path, ReportFormat.JSON)
+            return {"job_id": request.job_id, "format": "json", "content": report.to_dict()}
 
-        report.save(report_path, format=report_format)
-
-        return GenerateReportResponse(
-            success=True,
-            report_id=request.job_id,
-            file_path=str(report_path),
-            format=request.format,
-            message=f"Report generated successfully: {report_path}",
-        )
+        content = report.to_html()
+        report.save(report_path, ReportFormat.HTML)
+        return {"job_id": request.job_id, "format": "html", "content": content}
 
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
@@ -175,6 +177,54 @@ async def generate_ensemble_report(request: GenerateEnsembleReportRequest):
             "See playbook: ensemble_development.md"
         )
     )
+
+
+@router.get("/backtests/{job_id}/report")
+async def generate_backtest_report(job_id: str, format: str = "html"):
+    """
+    Generate and return a backtest report for a job.
+
+    Uses metrics.json, equity_curve.csv, and trades.csv under the job directory.
+    """
+    base_dir = Path(os.environ.get("BACKTEST_REPORT_BASE_DIR", Path("outputs") / "backtests"))
+    job_dir = base_dir / job_id
+
+    if not job_dir.exists():
+        raise HTTPException(status_code=404, detail=f"Job '{job_id}' not found under {base_dir}")
+
+    metrics_path = job_dir / "metrics.json"
+    equity_path = job_dir / "equity_curve.csv"
+    trades_path = job_dir / "trades.csv"
+
+    for required in [metrics_path, equity_path, trades_path]:
+        if not required.exists():
+            raise HTTPException(status_code=404, detail=f"Missing required file: {required}")
+
+    gen = BacktestReportGenerator()
+    try:
+        report = gen.generate(
+            metrics=metrics_path,
+            equity_curve_path=equity_path,
+            trades_path=trades_path,
+            job_id=job_id,
+        )
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+    except Exception as exc:  # pragma: no cover - defensive
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    fmt = format.lower()
+    if fmt in ("markdown", "md"):
+        content = report.to_markdown()
+        report.save(job_dir / "report.md", ReportFormat.MARKDOWN)
+        return {"job_id": job_id, "format": "markdown", "content": content}
+    if fmt == "json":
+        return {"job_id": job_id, "format": "json", "content": report.to_dict()}
+
+    # Default to HTML
+    content = report.to_html()
+    report.save(job_dir / "report.html", ReportFormat.HTML)
+    return {"job_id": job_id, "format": "html", "content": content}
 
 
 @router.get("/list", response_model=ListReportsResponse)

@@ -80,6 +80,9 @@ def run_for_model(
         train_window=3000,
         retrain_every=50,
         proba_entry=0.55,
+        proba_exit=0.50,
+        proba_column="ml_long_proba",
+        signal_column="ml_long_signal",
         model_config=model_cfg,
     )
 
@@ -99,9 +102,9 @@ def run_for_model(
             .round(4)
         )
 
-    mask = ~df_wf["ml_signal_long"].isna()
+    mask = ~df_wf["ml_long_signal"].isna()
     y_true = df_wf.loc[mask, "label_long"].astype(int)
-    y_pred = df_wf.loc[mask, "ml_signal_long"].astype(int)
+    y_pred = df_wf.loc[mask, "ml_long_signal"].astype(int)
 
     if not y_true.empty:
         print("\nOverall classification report:")
@@ -129,7 +132,7 @@ def run_for_model(
     )
 
     strategy = ColumnSignalStrategy(
-        ColumnSignalStrategyConfig(signal_col="ml_signal_long", warmup_bars=0)
+        ColumnSignalStrategyConfig(signal_col="ml_long_signal", warmup_bars=0)
     )
 
     backtester = Backtester(
@@ -159,7 +162,7 @@ def run_for_model(
 
 
 def main() -> None:
-    df = load_ohlcv_csv("data/BTCUSDT_P_15m.csv")
+    df = load_ohlcv_csv("data/ohlcv/BTCUSDT_15m.csv")
     df = df.tail(10_000).copy()
 
     feat_config = FeatureConfig()

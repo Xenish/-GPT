@@ -97,6 +97,9 @@ export async function fetchLiveStatus(
   }
 }
 
+// Backward-compat alias for stores that expect getLiveStatus
+export const getLiveStatus = fetchLiveStatus;
+
 export async function runBacktest(
   body: {
     symbol: string;
